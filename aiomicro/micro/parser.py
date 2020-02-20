@@ -27,12 +27,12 @@ def trace(*args):
 
 def parse(path):
     fsm = parser.load('aiomicro.micro.micro.fsm')
-    fsm.trace = trace
+    # fsm.trace = trace
     for linenum, line in enumerate(load_lines_from_path(path), start=1):
         line = un_comment(line).strip()
         if not line:
             continue
-        log.debug(f'{linenum}: {line}')
+        # log.debug(f'{linenum}: {line}')
         toks = line.split(' ', 1)
         if len(toks) == 1:
             raise IncompleteDirective(path, linenum)
