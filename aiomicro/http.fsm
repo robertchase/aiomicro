@@ -1,0 +1,39 @@
+STATE init
+  ENTER clear
+  EVENT data status
+    ACTION data
+
+STATE status
+  ENTER status
+  EVENT data
+    ACTION data
+    ACTION status
+  EVENT done header
+
+STATE header
+  ENTER header
+  EVENT data
+    ACTION data
+    ACTION header
+  EVENT header
+    ACTION header
+  EVENT done
+    ACTION process_headers
+  EVENT content body
+
+STATE body
+  ENTER body
+  EVENT data
+    ACTION data
+    ACTION body
+  EVENT done init
+    ACTION complete
+
+CONTEXT aiomicro.http.Context
+HANDLER clear aiomicro.http.act_clear
+HANDLER data aiomicro.http.act_data
+HANDLER status aiomicro.http.act_status
+HANDLER header aiomicro.http.act_header
+HANDLER process_headers aiomicro.http.act_process_headers
+HANDLER body aiomicro.http.act_body
+HANDLER complete aiomicro.http.act_complete
