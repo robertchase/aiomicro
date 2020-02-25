@@ -25,7 +25,7 @@ async def read(reader):
 
 
 async def on_connect(server, reader, writer):
-    cid = server.connection = server.connection + 1
+    cid = server.connection.incr()
     peerhost, peerport = writer.get_extra_info('peername')
     open = 'open server=%s socket=%s:%s, cid=%s' % (
         server.name, peerhost, peerport, cid)
