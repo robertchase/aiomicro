@@ -10,6 +10,7 @@ class Context:
     def __init__(self):
         self.database = None
         self.groups = {}
+        self.wraps = {}
         self.servers = []
         self.server = None
         self.route = None
@@ -58,8 +59,10 @@ class Route:
 
 class Method:
 
-    def __init__(self, path, silent=False, cursor=False):
+    def __init__(self, path, silent=False, cursor=False, wrap=None):
         self.handler = import_by_path(path)
+        if wrap:
+            self.handler = wrap(self.handler)
         self.silent = _boolean(silent)
         self.cursor = _boolean(cursor)
         self.contents = {}
@@ -159,6 +162,11 @@ def act_server(context, name, port):
     context.servers.append(server)
 
 
+def act_wrap(context, name, path):
+    # TODO: check for duplicate wrap name
+    context.wraps[name] = _import_by_path(path)
+
+
 def act_route(context, pattern):
     route = Route(pattern)
     context.route = route
@@ -178,6 +186,9 @@ def act_content(context, *args, **kwargs):
 
 def _method(context, command, path, **kwargs):
     # TODO: check for duplicate command
+    wrap = kwargs.get('wrap')
+    if wrap:
+        kwargs['wrap'] = context.wraps[wrap]
     method = Method(path, **kwargs)
     context.method = method
     context.route.methods[command] = method

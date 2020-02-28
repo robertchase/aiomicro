@@ -7,6 +7,9 @@ STATE init
     ACTION group
   # SERVER +name +port
   EVENT server server
+  # WRAP +name +path
+  EVENT wrap
+    ACTION wrap
 
 STATE server
   ENTER server
@@ -18,7 +21,7 @@ STATE route
   # ARG -type=None -group=None
   EVENT arg
     ACTION arg
-  # GET|PATCH|PUT|POST|DELETE +path
+  # GET|PATCH|PUT|POST|DELETE +path -silent=False -cursor=False -wrap=name
   EVENT get method
     ACTION get
   EVENT patch method
@@ -51,6 +54,7 @@ CONTEXT aiomicro.micro.micro.Context
 HANDLER database aiomicro.micro.micro.act_database
 HANDLER group aiomicro.micro.micro.act_group
 HANDLER server aiomicro.micro.micro.act_server
+HANDLER wrap aiomicro.micro.micro.act_wrap
 HANDLER route aiomicro.micro.micro.act_route
 HANDLER arg aiomicro.micro.micro.act_arg
 HANDLER content aiomicro.micro.micro.act_content

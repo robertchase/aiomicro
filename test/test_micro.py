@@ -203,3 +203,31 @@ def test_method():
     micro._method(ctx, 'GET', 'test.test_micro._yup')
     assert ctx.route.methods
     assert ctx.route.methods.get('GET')
+
+
+def _wrap(request, *args, **kwargs):
+    assert request.test1
+    assert not request.test2
+
+
+def test_wrap():
+
+    def wrapper(handler):
+        def inner(request, *args, **kwargs):
+            request.test1 = True
+            handler(request, *args, **kwargs)
+            request.test2 = True
+        return inner
+
+    class request:
+        def __init__(self):
+            self.test1 = False
+            self.test2 = False
+
+    ctx = micro.Context()
+    ctx.wraps['test'] = wrapper
+    ctx.route = micro.Route('pattern')
+    micro._method(ctx, 'GET', 'test.test_micro._wrap', wrap='test')
+    r = request()
+    ctx.method.handler(r)
+    assert r.test2
