@@ -164,7 +164,7 @@ def act_server(context, name, port):
 
 def act_wrap(context, name, path):
     # TODO: check for duplicate wrap name
-    context.wraps[name] = _import_by_path(path)
+    context.wraps[name] = import_by_path(path)
 
 
 def act_route(context, pattern):
