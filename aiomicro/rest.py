@@ -8,8 +8,10 @@ from aiomicro.http import HTTPException
 
 class Parser:
 
+    _fsm = fsm.Parser.parse('aiomicro.http.fsm')
+
     def __init__(self):
-        self.fsm = fsm.Parser.load('aiomicro.http.fsm')
+        self.fsm = Parser._fsm.compile()
 
     @property
     def is_loading(self):

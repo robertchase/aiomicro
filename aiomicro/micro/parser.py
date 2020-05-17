@@ -21,6 +21,13 @@ class UnexpectedDirective(Exception):
         )
 
 
+class ParseError(Exception):
+    def __init__(self, msg, file, linenum):
+        super().__init__(
+            f"parse error: '{msg}' at line {linenum} of {file}"
+        )
+
+
 def trace(*args):
     log.debug(f'TRACE: {args}')
 
@@ -38,7 +45,11 @@ def parse(path):
             raise IncompleteDirective(path, linenum)
         directive, line = toks
         args, kwargs = to_args(line)
-        if not fsm.handle(directive.lower(), *args, **kwargs):
+        try:
+            handled = fsm.handle(directive.lower(), *args, **kwargs)
+        except Exception as e:
+            raise ParseError(str(e), path, linenum)
+        if not handled:
             raise UnexpectedDirective(directive, path, linenum)
     return fsm.context.database, fsm.context.servers
 
