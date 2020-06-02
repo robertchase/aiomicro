@@ -41,7 +41,7 @@ class Request:
 def normalize_args(resource, args):
 
     if len(args) > len(resource):
-        raise Exception('too many regex matches in http resource')
+        raise Exception('too few regex matches in http resource')
 
     return [
         fn(value) for
@@ -67,14 +67,14 @@ def normalize_content(body, kwargs):
 class _Match:
 
     def __init__(self, method, args, kwargs):
-        self.method = method
         self.args = args
         self.kwargs = kwargs
+        self.handler = method.handler
         self.silent = method.silent
         self.cursor = method.cursor
 
     async def __call__(self, request):
-        return await self.method.handler(request, *self.args, **self.kwargs)
+        return await self.handler(request, *self.args, **self.kwargs)
 
 
 def match(server, request):

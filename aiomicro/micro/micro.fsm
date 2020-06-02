@@ -47,6 +47,25 @@ STATE method
     ACTION post
   EVENT delete
     ACTION delete
+  # RESPONSE +type
+  EVENT response response
+    ACTION response
+  EVENT route route
+  EVENT server server
+
+STATE response
+  KEY name -type -default
+    ACTION key
+  EVENT get method
+    ACTION get
+  EVENT patch method
+    ACTION patch
+  EVENT put method
+    ACTION put
+  EVENT post method
+    ACTION post
+  EVENT delete method
+    ACTION delete
   EVENT route route
   EVENT server server
 
@@ -63,3 +82,5 @@ HANDLER patch aiomicro.micro.micro.act_patch
 HANDLER put aiomicro.micro.micro.act_put
 HANDLER post aiomicro.micro.micro.act_post
 HANDLER delete aiomicro.micro.micro.act_delete
+HANDLER response aiomicro.micro.micro.act_response
+HANDLER key aiomicro.micro.micro.act_key
