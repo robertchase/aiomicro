@@ -5,11 +5,11 @@ STATE init
   # GROUP +name +val1, +val2, -val3..., -to_upper=False, -to_lower=False
   EVENT group
     ACTION group
-  # SERVER +name +port
-  EVENT server server
   # WRAP +name +path
   EVENT wrap
     ACTION wrap
+  # SERVER +name +port
+  EVENT server server
 
 STATE server
   ENTER server
@@ -54,7 +54,8 @@ STATE method
   EVENT server server
 
 STATE response
-  KEY name -type -default
+  # KEY name -type -default
+  EVENT key
     ACTION key
   EVENT get method
     ACTION get

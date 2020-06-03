@@ -188,11 +188,15 @@ class Content:  # pylint: disable=too-few-public-methods
 
 def act_database(context, *args, **kwargs):
     """action routine for database"""
+    if context.database:
+        raise Exception('database already specified')
     context.database = Database(*args, **kwargs)
 
 
 def act_group(context, name, *values, to_upper=False, to_lower=False):
     """action routine for group"""
+    if name in context.groups.keys():
+        raise Exception('group already specified')
     group = Group(*values, to_upper=to_upper, to_lower=to_lower)
     context.groups[name] = group
 
