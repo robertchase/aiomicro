@@ -79,15 +79,20 @@ class Method:  # pylint: disable=too-few-public-methods
 class Response:  # pylint: disable=too-few-public-methods
     """Container for a response configuration"""
 
-    def __init__(self, response_type):
-        if response_type != 'json':
-            raise Exception(f"invalid response type '{response_type}'")
-        self.type = response_type
+    def __init__(self, type,  # pylint: disable=redefined-builtin
+                 default=None):
+
+        if type not in ('json', 'str'):
+            raise Exception(f"invalid response type '{type}'")
+        if default is not None and type != 'str':
+            raise Exception(f"default not valid with type '{type}'")
+        self.type = type
+        self.default = default
         self.keys = {}
 
 
 class Key:  # pylint: disable=too-few-public-methods
-    """Container class for a response key"""
+    """Container for a response key"""
 
     def __init__(self, name,  # pylint: disable=too-many-arguments
                  type=None,  # pylint: disable=redefined-builtin
@@ -276,16 +281,19 @@ def act_delete(context, path, **kwargs):
     _method(context, 'DELETE', path, **kwargs)
 
 
-def act_response(context, type):  # pylint: disable=redefined-builtin
+def act_response(context, type,  # pylint: disable=redefined-builtin
+                 default=None):
     """action routine for response"""
     if context.method.response is not None:
         raise Exception('response already defined')
-    context.method.response = Response(type)
+    context.method.response = Response(type, default=default)
 
 
 def act_key(context, name, **kwargs):
     """action routine for response key"""
     response = context.method.response
+    if response.type != 'json':
+        raise Exception('key only valid for json response types')
     if name in response.keys.keys():
         raise Exception('duplicate key name')
     response.keys[name] = Key(name, groups=context.groups, **kwargs)

@@ -64,6 +64,40 @@ def normalize_content(body, kwargs):
     return result
 
 
+class _Response:
+
+    def __init__(self, response):
+        self.response = response
+        self.result = {}
+
+    def __call__(self, result):
+
+        if self.response is None:
+            return result
+
+        if result is None:
+            return self.default()
+
+        if self.response.type == 'str':
+            return str(result)
+
+        if not isinstance(result, dict):
+            raise Exception('expecting dict result from handler')
+
+        response = self.default()
+        for key, val in result.items():
+            if key not in response:
+                raise Exception(f"unexpected key '{key}' in handler result")
+            cast = self.response.keys[key].type
+            response[key] = cast(val)
+        return response
+
+    def default(self):
+        if self.response.type == 'str':
+            return self.response.default
+        return {key: val.default for key, val in self.response.keys.items()}
+
+
 class _Match:
 
     def __init__(self, method, args, kwargs):
@@ -72,9 +106,11 @@ class _Match:
         self.handler = method.handler
         self.silent = method.silent
         self.cursor = method.cursor
+        self.response = _Response(method.response)
 
     async def __call__(self, request):
-        return await self.handler(request, *self.args, **self.kwargs)
+        result = await self.handler(request, *self.args, **self.kwargs)
+        return self.response(result)
 
 
 def match(server, request):

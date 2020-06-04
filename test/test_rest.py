@@ -57,3 +57,43 @@ def test_normalize_content(content, body, result, is_exception):
         assert rest.normalize_content(body, content) == result
     except HTTPException:
         assert is_exception
+
+
+@pytest.mark.parametrize(
+    'result,expect,is_exception', (
+        (None, {'a': None, 'b': None, 'c': 1}, False),
+        ({'c': 2}, {'a': None, 'b': None, 'c': 2}, False),
+        ({'c': '2'}, {'a': None, 'b': None, 'c': 2}, False),
+        ({'a': '1', 'c': '2'}, {'a': '1', 'b': None, 'c': 2}, False),
+        ({'a': '1', 'b': 123, 'c': '2'}, {'a': '1', 'b': 123, 'c': 2}, False),
+        ({'d': 2}, None, True),
+        ('string', None, True),
+    )
+)
+def test_response(result, expect, is_exception):
+    res = micro.Response('json')
+    res.keys['a'] = micro.Key('a')
+    res.keys['b'] = micro.Key('b', type=int)
+    res.keys['c'] = micro.Key('c', type=int, default=1)
+    resp = rest._Response(res)
+
+    if is_exception:
+        with pytest.raises(Exception):
+            resp(result)
+    else:
+        assert resp(result) == expect
+
+
+@pytest.mark.parametrize(
+    'result,expect', (
+        ('a', 'a'),
+        (1, '1'),
+        ({'a': 1}, "{'a': 1}"),
+        (None, 'foo'),
+    )
+)
+def test_response_str(result, expect):
+    res = micro.Response('str', default='foo')
+    resp = rest._Response(res)
+
+    assert resp(result) == expect

@@ -76,3 +76,69 @@ def test_wrap():
     assert get.handler() == function()
     put = route.methods['PUT']
     assert put.handler() == double(function)()
+
+
+def test_response_str():
+    """test response directive"""
+    database, servers = parse(StringIO(
+        'SERVER test 1000\n'
+        'ROUTE /test/ping\n'
+        'GET test.test_parser.function\n'
+        'RESPONSE str\n'
+    ))
+    server = servers[0]
+    route = server.routes[0]
+    get = route.methods['GET']
+    response = get.response
+    assert response.type == 'str'
+    assert response.default is None
+
+
+def test_response_str_default():
+    """test response directive"""
+    database, servers = parse(StringIO(
+        'SERVER test 1000\n'
+        'ROUTE /test/ping\n'
+        'GET test.test_parser.function\n'
+        'RESPONSE str default=whatever\n'
+    ))
+    server = servers[0]
+    route = server.routes[0]
+    get = route.methods['GET']
+    response = get.response
+    assert response.type == 'str'
+    assert response.default == 'whatever'
+
+
+def test_response_str_key():
+    """test response directive"""
+    with pytest.raises(Exception):
+        database, servers = parse(StringIO(
+            'SERVER test 1000\n'
+            'ROUTE /test/ping\n'
+            'GET test.test_parser.function\n'
+            'RESPONSE str\n'
+            'KEY abc\n'
+        ))
+
+
+def test_response_json():
+    """test response directive"""
+    database, servers = parse(StringIO(
+        'SERVER test 1000\n'
+        'ROUTE /test/ping\n'
+        'GET test.test_parser.function\n'
+        'RESPONSE json\n'
+        'KEY abc\n'
+    ))
+
+
+def test_response_json_default():
+    """test response directive"""
+    with pytest.raises(Exception):
+        database, servers = parse(StringIO(
+            'SERVER test 1000\n'
+            'ROUTE /test/ping\n'
+            'GET test.test_parser.function\n'
+            'RESPONSE json default=foo\n'
+        ))
