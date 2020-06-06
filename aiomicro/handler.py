@@ -30,7 +30,7 @@ async def on_connect(server,  # pylint: disable=too-many-statements
                               # pylint: disable=too-many-branches
                      reader, writer):
     """asyncio start_server callback"""
-    cid = server.connection.incr()
+    cid = next(server.connection_id)
     peerhost, peerport = writer.get_extra_info('peername')
     open_msg = 'open server=%s socket=%s:%s, cid=%s' % (
         server.name, peerhost, peerport, cid)

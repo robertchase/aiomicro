@@ -11,18 +11,6 @@ from aiomicro import micro
 log = logging.getLogger(__name__)
 
 
-class ConnectionCount:  # pylint: disable=too-few-public-methods
-    """simple counter for enumerating connection ids"""
-
-    def __init__(self):
-        self.count = 0
-
-    def incr(self):
-        """increment and return the counter"""
-        self.count += 1
-        return self.count
-
-
 async def start_server(server):
     """start a server on a port"""
     callback = partial(on_connect, server)
@@ -34,12 +22,19 @@ async def start_server(server):
 
 async def main(defn='micro'):
     """parse micro definition file and start servers"""
-    connection = ConnectionCount()
+
+    def sequence(current=1):
+        """generate a sequence of integers"""
+        while True:
+            yield current
+            current += 1
+
+    connection_id = sequence()
     database, servers = micro.parse(defn)
     if database:
         DB.setup(*database.args, **database.kwargs)
     for server in servers:
-        server.connection = connection
+        server.connection_id = connection_id
         server.listener = await start_server(server)
     await asyncio.gather(
         *[server.listener.serve_forever() for server in servers]
