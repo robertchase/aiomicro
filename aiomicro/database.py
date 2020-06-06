@@ -1,3 +1,4 @@
+"""setup database"""
 import os
 
 from aiodb.connector.mysql import DB as mysql_db
@@ -8,22 +9,26 @@ from aiomicro.micro.micro import _boolean
 
 
 def setup(defn='micro'):
-    database, servers = micro.parse(defn)
+    """setup database from micro file"""
+    database, _ = micro.parse(defn)
     return _setup(*database.args, **database.kwargs)
 
 
-def _setup(type, *args, **kwargs):
+def _setup(database_type, *args, **kwargs):
+    """setup database connector by type"""
 
-    if type == 'mysql':
+    if database_type == 'mysql':
         return setup_mysql(*args, **kwargs)
-    elif type == 'postgres':
+    if database_type == 'postgres':
         return setup_postgres(*args, **kwargs)
 
     return None
 
 
-def setup_mysql(host='mysql', port=3306, name='', user='', password='',
+def setup_mysql(host='mysql',  # pylint: disable=too-many-arguments
+                port=3306, name='', user='', password='',
                 autocommit=None, isolation=None, debug=False, commit=True):
+    """setup mysql connector"""
     host = os.getenv('DB_HOST', host)
     port = int(os.getenv('DB_PORT', port))
     name = os.getenv('DB_NAME', name)
@@ -37,8 +42,10 @@ def setup_mysql(host='mysql', port=3306, name='', user='', password='',
     )
 
 
-def setup_postgres(host='mysql', port=3306, name='', user='', password='',
+def setup_postgres(host='mysql',  # pylint: disable=too-many-arguments
+                   port=3306, name='', user='', password='',
                    autocommit=None, debug=False, commit=True):
+    """setup postgres connector"""
     host = os.getenv('DB_HOST', host)
     port = int(os.getenv('DB_PORT', port))
     name = os.getenv('DB_NAME', name)
@@ -56,10 +63,12 @@ class _DB:
     def __init__(self):
         self._db = None
 
-    def setup(self, type, *args, **kwargs):
-        self._db = _setup(type, *args, **kwargs)
+    def setup(self, database_type, *args, **kwargs):
+        """establish connector to database"""
+        self._db = _setup(database_type, *args, **kwargs)
 
     async def cursor(self):
+        """return connection to database as cursor"""
         return await self._db.cursor()
 
 

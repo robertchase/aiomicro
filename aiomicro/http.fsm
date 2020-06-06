@@ -27,7 +27,6 @@ STATE body
     ACTION data
     ACTION body
   EVENT done init
-    ACTION complete
 
 CONTEXT aiomicro.http.Context
 HANDLER clear aiomicro.http.act_clear
@@ -36,4 +35,3 @@ HANDLER status aiomicro.http.act_status
 HANDLER header aiomicro.http.act_header
 HANDLER process_headers aiomicro.http.act_process_headers
 HANDLER body aiomicro.http.act_body
-HANDLER complete aiomicro.http.act_complete

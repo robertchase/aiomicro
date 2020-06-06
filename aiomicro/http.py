@@ -1,3 +1,4 @@
+"""parser and producer for http documents"""
 import gzip
 import json
 import re
@@ -6,14 +7,17 @@ import urllib.parse as urlparse
 
 
 class HTTPException(Exception):
+    """add http attributes to base exception"""
 
     def __init__(self, code, reason, explanation=''):
+        super(HTTPException).__init__()
         self.code = code
         self.reason = reason
         self.explanation = explanation
 
 
-class Context:
+class Context:  # pylint: disable=too-few-public-methods
+    """http fsm context"""
 
     def __init__(self):
         self.data = b''
@@ -21,6 +25,7 @@ class Context:
 
 
 def act_clear(context):
+    """action routine to set or reset the fsm context"""
     context.is_parsing = True
     context.http_max_content_length = None
     context.http_max_line_length = 10000
@@ -42,6 +47,7 @@ def act_clear(context):
 
 
 def act_data(context, data=None):
+    """action routine to handle new incoming chunk of data"""
     if data:
         context.data += data
 
@@ -54,7 +60,7 @@ def _line(context):
                                 'no end of line encountered')
         return None
     line, context.data = test
-    if len(line):
+    if line:
         if line.endswith(b'\r'):
             line = line[:-1]
         if len(line) > context.http_max_line_length:
@@ -63,9 +69,10 @@ def _line(context):
 
 
 def act_status(context):
+    """action routine to handle status line"""
     line = _line(context)
     if not line:
-        return
+        return None
     toks = line.split()
     if len(toks) != 3:
         raise HTTPException(400, 'Bad Request', 'malformed status line')
@@ -77,16 +84,17 @@ def act_status(context):
     context.http_resource = res.path
     if res.query:
         context.http_query_string = res.query
-        for n, v in urlparse.parse_qs(res.query).items():
-            context.http_query[n] = v[0] if len(v) == 1 else v
+        for key, val in urlparse.parse_qs(res.query).items():
+            context.http_query[key] = val[0] if len(val) == 1 else val
 
     return 'done'
 
 
 def act_header(context):
+    """action routine to handle a single header"""
     line = _line(context)
     if line is None:
-        return
+        return None
     if len(line) == 0:
         return 'done'
 
@@ -135,13 +143,13 @@ def _content_type(context):
         ')?'                  # end of optional parameter specification
         r'\s*$'               # optional spaces and end of line
     )
-    m = re.match(pattern, content_type)
-    if not m:
+    match = re.match(pattern, content_type)
+    if not match:
         raise HTTPException(400, 'Bad Request', 'invalid content-type header')
-    ct = m.groupdict()
-    context.http_content_type = f"{ct['type']}/{ct['subtype']}"
-    if ct.get('attribute') == 'charset':
-        context.http_charset = ct['value']
+    ctype = match.groupdict()
+    context.http_content_type = f"{ctype['type']}/{ctype['subtype']}"
+    if ctype.get('attribute') == 'charset':
+        context.http_charset = ctype['value']
 
 
 def _transfer_encoding(context):
@@ -155,6 +163,7 @@ def _transfer_encoding(context):
 
 
 def act_process_headers(context):
+    """action routine to handle headers"""
     _content_length(context)
     _content_type(context)
     _transfer_encoding(context)
@@ -170,13 +179,14 @@ def _content(context):
         if context.http_content_type == 'application/json':
             context.content = json.loads(context.http_content)
         elif context.http_content_type == 'application/x-www-form-urlencoded':
-            qs = urlparse.parse_qs(context.http_content)
+            query = urlparse.parse_qs(context.http_content)
             context.content = {
-                n: v[0] if len(v) == 1 else v for n, v in qs.items()
+                n: v[0] if len(v) == 1 else v for n, v in query.items()
             }
 
 
 def act_body(context):
+    """action routine to handle content"""
     if len(context.data) < context.http_content_length:
         return
     data = context.data[:context.http_content_length]
@@ -191,14 +201,11 @@ def act_body(context):
     context.is_parsing = False
 
 
-def act_complete(context):
-    pass
-
-
 # ---
 
 
 def format_server(content='', code=200, message='', headers=None):
+    """format an http response"""
 
     if code == 200 and message == '':
         message = 'OK'
@@ -212,15 +219,16 @@ def format_server(content='', code=200, message='', headers=None):
     return _format(status, headers, content, content_type)
 
 
-def _format(status, headers, content, content_type='text/plain',
-            charset='utf-8', close=False, compress=False, host=None):
+def _format(status,  # pylint: disable=too-many-arguments
+            headers, content, content_type='text/plain', charset='utf-8',
+            close=False, compress=False):
 
     if not headers:
         headers = {}
 
     header_keys = [k.lower() for k in headers.keys()]
 
-    if len(content):
+    if content:
         if 'content-type' not in header_keys:
             if content_type in ('json', 'application/json'):
                 content = json.dumps(content)
@@ -234,14 +242,9 @@ def _format(status, headers, content, content_type='text/plain',
             content = content.encode(charset)
             headers['Content-Type'] += f'; charset={charset}'
 
-    '''
     if compress:
-        if self.is_outbound:
-            headers['Accept-Encoding'] = 'gzip'
-        else:
-            content = gzip.compress(content)
-            headers['Content-Encoding'] = 'gzip'
-    '''
+        content = gzip.compress(content)
+        headers['Content-Encoding'] = 'gzip'
 
     if 'date' not in header_keys:
         headers['Date'] = time.strftime(
@@ -252,13 +255,6 @@ def _format(status, headers, content, content_type='text/plain',
 
     if close:
         headers['Connection'] = 'close'
-
-    '''
-    if self.is_outbound and 'host' not in (k.lower() for k in headers):
-        host = host if host else self.host if self.host else \
-            '%s:%s' % self.peer_address
-        headers['Host'] = host
-    '''
 
     headers = '%s\r\n%s\r\n\r\n' % (
         status,

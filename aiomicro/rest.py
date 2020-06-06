@@ -1,3 +1,4 @@
+"""rest/http"""
 from itertools import zip_longest
 import re
 
@@ -7,6 +8,7 @@ from aiomicro.http import HTTPException
 
 
 class Parser:
+    """parse an http document"""
 
     _fsm = fsm.Parser.parse('aiomicro.http.fsm')
 
@@ -15,17 +17,21 @@ class Parser:
 
     @property
     def is_loading(self):
+        """true if http document not fully parsed"""
         return self.fsm.context.is_parsing
 
     @property
     def request(self):
+        """return a Request from the fsm"""
         return Request(self.fsm.context)
 
     def handle(self, data):
+        """consume more data with parser fsm"""
         self.fsm.handle('data', data)
 
 
-class Request:
+class Request:  # pylint: disable=too-few-public-methods
+    """container for http request attributes"""
 
     def __init__(self, http):
         self._http = http
@@ -39,6 +45,7 @@ class Request:
 
 
 def normalize_args(resource, args):
+    """extract and format/normalize args from http resource"""
 
     if len(args) > len(resource):
         raise Exception('too few regex matches in http resource')
@@ -54,6 +61,7 @@ def normalize_args(resource, args):
 
 
 def normalize_content(body, kwargs):
+    """extract content from http request"""
 
     result = {}
     for name, defn in kwargs.items():
@@ -93,12 +101,13 @@ class _Response:
         return response
 
     def default(self):
+        """return default value for response"""
         if self.response.type == 'str':
             return self.response.default
         return {key: val.default for key, val in self.response.keys.items()}
 
 
-class _Match:
+class _Match:  # pylint: disable=too-few-public-methods
 
     def __init__(self, method, args, kwargs):
         self.args = args
@@ -114,15 +123,16 @@ class _Match:
 
 
 def match(server, request):
+    """match http resource and method against server routes"""
 
     for route in server.routes:
-        match = re.match(route.pattern, request.http_resource)
-        if not match:
+        check = re.match(route.pattern, request.http_resource)
+        if not check:
             continue
         method = route.methods.get(request.http_method)
         if not method:
             break
-        args = normalize_args(match.groups(), route.args)
+        args = normalize_args(check.groups(), route.args)
         kwargs = normalize_content(request.content, method.contents)
         return _Match(method, args, kwargs)
 

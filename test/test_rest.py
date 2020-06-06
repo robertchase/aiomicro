@@ -1,3 +1,4 @@
+"""test rest operations"""
 import pytest
 
 from aiomicro.http import HTTPException
@@ -15,11 +16,12 @@ from aiomicro import rest
     )
 )
 def test_normalize_args(resource, args, result, is_value, is_exception):
+    """test args operation"""
     try:
         assert rest.normalize_args(resource, args) == result
     except ValueError:
         assert is_value
-    except Exception:
+    except Exception:  # pylint: disable=broad-except
         assert is_exception
 
 
@@ -53,6 +55,7 @@ def test_normalize_args(resource, args, result, is_value, is_exception):
     )
 )
 def test_normalize_content(content, body, result, is_exception):
+    """test content operation"""
     try:
         assert rest.normalize_content(body, content) == result
     except HTTPException:
@@ -71,11 +74,12 @@ def test_normalize_content(content, body, result, is_exception):
     )
 )
 def test_response(result, expect, is_exception):
+    """test json response"""
     res = micro.Response('json')
     res.keys['a'] = micro.Key('a')
     res.keys['b'] = micro.Key('b', type=int)
     res.keys['c'] = micro.Key('c', type=int, default=1)
-    resp = rest._Response(res)
+    resp = rest._Response(res)  # pylint: disable=protected-access
 
     if is_exception:
         with pytest.raises(Exception):
@@ -93,7 +97,8 @@ def test_response(result, expect, is_exception):
     )
 )
 def test_response_str(result, expect):
+    """test str response operation"""
     res = micro.Response('str', default='foo')
-    resp = rest._Response(res)
+    resp = rest._Response(res)  # pylint: disable=protected-access
 
     assert resp(result) == expect

@@ -1,3 +1,4 @@
+"""handle an incoming http request"""
 import asyncio
 from concurrent import futures
 import logging
@@ -12,6 +13,7 @@ log = logging.getLogger(__name__)
 
 
 async def read(reader):
+    """read and parse an http message from reader"""
 
     async def _read(reader):
         return await reader.read(5000)
@@ -24,10 +26,13 @@ async def read(reader):
     return parser.request
 
 
-async def on_connect(server, reader, writer):
+async def on_connect(server,  # pylint: disable=too-many-statements
+                              # pylint: disable=too-many-branches
+                     reader, writer):
+    """asyncio start_server callback"""
     cid = server.connection.incr()
     peerhost, peerport = writer.get_extra_info('peername')
-    open = 'open server=%s socket=%s:%s, cid=%s' % (
+    open_msg = 'open server=%s socket=%s:%s, cid=%s' % (
         server.name, peerhost, peerport, cid)
     t_start = time.perf_counter()
     handler = None
@@ -35,12 +40,12 @@ async def on_connect(server, reader, writer):
 
     try:
         request = await read(reader)
-        open += ', method=%s, resource=%s' % (
+        open_msg += ', method=%s, resource=%s' % (
             request.http_method, request.http_resource)
         handler = rest.match(server, request)
         if not handler.silent:
-            log.info(open)
-            open = None
+            log.info(open_msg)
+            open_msg = None
         if handler.cursor:
             request.cursor = cursor = await DB.cursor()
             await request.cursor.start_transaction()
@@ -51,22 +56,22 @@ async def on_connect(server, reader, writer):
         if response is None:
             response = ''
         writer.write(format_server(content=response))
-    except HTTPException as e:
-        if open:
-            log.info(open)
+    except HTTPException as ex:
+        if open_msg:
+            log.info(open_msg)
         if handler:
             handler.silent = False
-        if e.explanation:
-            log.warning('code=%s, (%s), cid=%s', e.code, e.explanation, cid)
+        if ex.explanation:
+            log.warning('code=%s, (%s), cid=%s', ex.code, ex.explanation, cid)
         else:
-            log.warning('code=%s, cid=%s', e.code, cid)
+            log.warning('code=%s, cid=%s', ex.code, cid)
         writer.write(format_server(
-            code=e.code, message=e.reason, content=e.explanation,
+            code=ex.code, message=ex.reason, content=ex.explanation,
         ))
     # 3.8 except asyncio.exceptions.TimeoutError:
     except futures.TimeoutError:
-        if open:
-            log.info(open)
+        if open_msg:
+            log.info(open_msg)
         if handler:
             handler.silent = False
         log.exception('timeout, cid=%s', cid)
@@ -74,9 +79,9 @@ async def on_connect(server, reader, writer):
             code=400, message='Bad Request',
             content='timeout reading HTTP document',
         ))
-    except Exception:
-        if open:
-            log.info(open)
+    except Exception:  # pylint: disable=broad-except
+        if open_msg:
+            log.info(open_msg)
         if handler:
             handler.silent = False
         log.exception('internal error, cid=%s', cid)
