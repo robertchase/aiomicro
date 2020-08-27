@@ -96,6 +96,8 @@ class _Response:
         for key, val in result.items():
             if key not in response:
                 raise Exception(f"unexpected key '{key}' in handler result")
+            if val is None:
+                continue
             cast = self.response.keys[key].type
             response[key] = cast(val)
         return response
