@@ -33,6 +33,9 @@ async def main(defn='micro'):
     database, servers = micro.parse(defn)
     if database:
         DB.setup(*database.args, **database.kwargs)
+        cursor = await DB.cursor()
+        log.info("verified database connectivity")
+        await cursor.close()
     for server in servers:
         server.connection_id = connection_id
         server.listener = await start_server(server)

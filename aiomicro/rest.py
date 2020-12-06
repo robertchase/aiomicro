@@ -29,12 +29,18 @@ class Parser:
         """consume more data with parser fsm"""
         self.fsm.handle('data', data)
 
+    def reset(self):
+        """reset parser to prepare for next request"""
+        self.fsm.handle("done")
+
 
 class Request:  # pylint: disable=too-few-public-methods
     """container for http request attributes"""
 
     def __init__(self, http):
         self._http = http
+        keep_alive = http.http_headers.get("connection", "keep-alive")
+        self.is_keep_alive = keep_alive == "keep-alive"
 
     def __getattr__(self, name):
         if name in ('http_headers', 'http_content', 'http_method',
