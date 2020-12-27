@@ -30,7 +30,7 @@ async def main(defn='micro'):
             current += 1
 
     connection_id = sequence()
-    database, servers = micro.parse(defn)
+    database, servers, tasks = micro.parse(defn)
     if database:
         DB.setup(*database.args, **database.kwargs)
         cursor = await DB.cursor()
@@ -39,9 +39,11 @@ async def main(defn='micro'):
     for server in servers:
         server.connection_id = connection_id
         server.listener = await start_server(server)
+    for key, value in tasks.items():
+        log.info("starting task %s", key)
+        asyncio.create_task(value(), name=key)
     await asyncio.gather(
-        *[server.listener.serve_forever() for server in servers]
-    )
+        *[server.listener.serve_forever() for server in servers])
 
 
 if __name__ == '__main__':

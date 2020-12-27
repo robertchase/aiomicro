@@ -57,7 +57,7 @@ def parse(path):
             raise ParseError(str(ex), path, linenum)
         if not handled:
             raise UnexpectedDirective(directive, path, linenum)
-    return fsm.context.database, fsm.context.servers
+    return fsm.context.database, fsm.context.servers, fsm.context.tasks
 
 
 if __name__ == '__main__':

@@ -8,6 +8,9 @@ STATE init
   # WRAP +name +path
   EVENT wrap
     ACTION wrap
+  # TASK +name +path
+  EVENT task
+    ACTION task
   # SERVER +name +port
   EVENT server server
 
@@ -75,6 +78,7 @@ HANDLER database aiomicro.micro.micro.act_database
 HANDLER group aiomicro.micro.micro.act_group
 HANDLER server aiomicro.micro.micro.act_server
 HANDLER wrap aiomicro.micro.micro.act_wrap
+HANDLER task aiomicro.micro.micro.act_task
 HANDLER route aiomicro.micro.micro.act_route
 HANDLER arg aiomicro.micro.micro.act_arg
 HANDLER content aiomicro.micro.micro.act_content

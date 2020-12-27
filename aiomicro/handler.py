@@ -24,12 +24,10 @@ async def on_connect(server, reader, writer):
     silent = False
 
     while True:
-        result = await handle_request(server, reader, writer, cid)
+        result = await handle_request(server, reader, writer, cid, open_msg)
         if not result.closed:
             silent = result.silent
         if not silent:
-            if open_msg:
-                log.info(open_msg)
             log.info(result.message)
         open_msg = None
         if not result.keep_alive:
@@ -56,7 +54,7 @@ Result = namedtuple("Result", "message, keep_alive, silent, closed",
                     defaults=(False, False, False))
 
 
-async def handle_request(server, reader, writer, cid):
+async def handle_request(server, reader, writer, cid, open_msg):
     """handle a single request from the connection"""
     cursor = None
     message = f"request cid={cid}"
@@ -80,6 +78,11 @@ async def handle_request(server, reader, writer, cid):
             await request.cursor.start_transaction()
         request.cid = cid
         request.id = rid
+
+        # --- display open message before handling request
+        if open_msg:
+            if not handler.silent:
+                log.info(open_msg)
 
         # --- handle the request
         response = await handler(request)

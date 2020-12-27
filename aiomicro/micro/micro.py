@@ -13,6 +13,7 @@ class Context:  # pylint: disable=too-few-public-methods
         self.database = None
         self.groups = {}
         self.wraps = {}
+        self.tasks = {}
         self.servers = []
         self.server = None
         self.route = None
@@ -221,6 +222,13 @@ def act_wrap(context, name, path):
     if name in context.wraps.keys():
         raise Exception('duplicate wrap name')
     context.wraps[name] = import_by_path(path)
+
+
+def act_task(context, name, path):
+    """action routine for task"""
+    if name in context.tasks.keys():
+        raise Exception('duplicate task name')
+    context.tasks[name] = import_by_path(path)
 
 
 def act_route(context, pattern):
