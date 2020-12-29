@@ -2,52 +2,7 @@
 from itertools import zip_longest
 import re
 
-import fsm.parser as fsm
-
 from aiomicro.http import HTTPException
-
-
-class Parser:
-    """parse an http document"""
-
-    _fsm = fsm.Parser.parse('aiomicro.http.fsm')
-
-    def __init__(self):
-        self.fsm = Parser._fsm.compile()
-
-    @property
-    def is_loading(self):
-        """true if http document not fully parsed"""
-        return self.fsm.context.is_parsing
-
-    @property
-    def request(self):
-        """return a Request from the fsm"""
-        return Request(self.fsm.context)
-
-    def handle(self, data):
-        """consume more data with parser fsm"""
-        self.fsm.handle('data', data)
-
-    def reset(self):
-        """reset parser to prepare for next request"""
-        self.fsm.handle("done")
-
-
-class Request:  # pylint: disable=too-few-public-methods
-    """container for http request attributes"""
-
-    def __init__(self, http):
-        self._http = http
-        keep_alive = http.http_headers.get("connection", "keep-alive")
-        self.is_keep_alive = keep_alive == "keep-alive"
-
-    def __getattr__(self, name):
-        if name in ('http_headers', 'http_content', 'http_method',
-                    'http_resource', 'http_query_string', 'http_query',
-                    'content'):
-            return getattr(self._http, name)
-        raise AttributeError(f"'Request' object has no attribute '{name}'")
 
 
 def normalize_args(resource, args):

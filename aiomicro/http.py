@@ -1,4 +1,5 @@
 """parser and producer for http documents"""
+import asyncio
 import gzip
 import json
 import re
@@ -16,192 +17,190 @@ class HTTPException(Exception):
         self.explanation = explanation
 
 
-class Context:  # pylint: disable=too-few-public-methods
-    """http fsm context"""
+class HTTPEOF(Exception):
+    """unexpected end of stream"""
+
+
+class HTTPDocument:
 
     def __init__(self):
-        self.data = b''
-        act_clear(self)
+        self.http_message = ''
+        self.http_headers = {}
+        self.http_self = None
+        self.http_method = None
+        self.http_resource = None
+        self.http_query_string = ''
+        self.http_query = {}
+        self.http_self_length = None
+        self.http_self_type = None
+        self.http_charset = None
+        self.http_encoding = None
+        self.is_keep_alive = True
+
+        self.content = {}
+
+        self.http_max_content_length = None
+        self.http_max_line_length = 10000
+        self.http_max_header_count = 100
 
 
-def act_clear(context):
-    """action routine to set or reset the fsm context"""
-    context.is_parsing = True
-    context.http_max_content_length = None
-    context.http_max_line_length = 10000
-    context.http_max_header_count = 100
+class HTTPReader:
+    """stream reader that supports a max line length and timeout"""
 
-    context.http_message = ''
-    context.http_headers = {}
-    context.http_content = None
-    context.http_method = None
-    context.http_resource = None
-    context.http_query_string = ''
-    context.http_query = {}
-    context.http_content_length = None
-    context.http_content_type = None
-    context.http_charset = None
-    context.http_encoding = None
+    def __init__(self, reader, max_line_length=10_000, timeout=5):
+        self.reader = reader
+        self.max_line_length = max_line_length
+        self.timeout = timeout
+        self.buffer = b""
 
-    context.content = {}
+    async def chunk(self):
+        """read a chunk from the underlying stream"""
+
+        async def _read():
+            return await self.reader.read(5000)
+
+        data = await asyncio.wait_for(_read(), self.timeout)
+
+        if len(data) == 0:
+            raise HTTPEOF()
+
+        self.buffer += data
+
+    async def read(self, length):
+        """read length bytes"""
+        while True:
+            if len(self.buffer) >= length:
+                data, self.buffer = self.buffer[:length], self.buffer[length:]
+                return data
+            await self.chunk()
+
+    async def readline(self):
+        """read a line (ends in \n or \r\n) as ascii"""
+        while True:
+            test = self.buffer.split(b"\n", 1)
+            if len(test) == 2:
+                line, self.buffer = test
+                if line.endswith(b"\r"):
+                    line = line[:-1]
+                if len(line) > self.max_line_length:
+                    raise HTTPException(431, "Request Header Fields Too Long")
+                return line.decode("ascii")
+
+            if len(self.buffer) > self.max_line_length:
+                raise HTTPException(431, "Request Header Fields Too Long",
+                                    "no end of line encountered")
+            await self.chunk()
 
 
-def act_data(context, data=None):
-    """action routine to handle new incoming chunk of data"""
-    if data:
-        context.data += data
+async def parse(reader):
+    """parse an HTTP document from a stream"""
 
+    document = HTTPDocument()
 
-def _line(context):
-    test = context.data.split(b'\n', 1)
-    if len(test) == 1:
-        if len(context.data) > context.http_max_line_length:
-            raise HTTPException(431, 'Request Header Fields Too Long',
-                                'no end of line encountered')
-        return None
-    line, context.data = test
-    if line:
-        if line.endswith(b'\r'):
-            line = line[:-1]
-        if len(line) > context.http_max_line_length:
-            raise HTTPException(431, 'Request Header Fields Too Long')
-    return line.decode('ascii')
+    # --- status: POST / HTTP/1.1
+    status = await reader.readline()
+    toks = status.split()
 
-
-def act_status(context):
-    """action routine to handle status line"""
-    line = _line(context)
-    if not line:
-        return None
-    toks = line.split()
     if len(toks) != 3:
-        raise HTTPException(400, 'Bad Request', 'malformed status line')
-    if toks[2] not in ('HTTP/1.0', 'HTTP/1.1'):
-        raise HTTPException(400, 'Bad Request', 'unsupported HTTP protocol')
+        raise HTTPException(400, "Bad Request", "malformed status line")
+    if toks[2] not in ("HTTP/1.0", "HTTP/1.1"):
+        raise HTTPException(400, "Bad Request", "unsupported HTTP protocol")
 
-    context.http_method = toks[0].upper()
+    document.http_method = toks[0].upper()
     res = urlparse.urlparse(toks[1])
-    context.http_resource = res.path
+    document.http_resource = res.path
     if res.query:
-        context.http_query_string = res.query
+        document.http_query_string = res.query
         for key, val in urlparse.parse_qs(res.query).items():
-            context.http_query[key] = val[0] if len(val) == 1 else val
+            document.http_query[key] = val[0] if len(val) == 1 else val
 
-    return 'done'
+    # --- headers
+    while len(header := await reader.readline()) > 0:
+        if len(document.http_headers) == document.http_max_header_count:
+            raise HTTPException(400,
+                                "Bad Request", "max header count exceeded")
+        test = header.split(":", 1)
+        if len(test) != 2:
+            raise HTTPException(400, "Bad Request", "header missing colon")
+        name, value = test
+        document.http_headers[name.strip().lower()] = value.strip()
 
+    # --- keep alive
+    keep_alive = document.http_headers.get("connection", "keep-alive")
+    document.is_keep_alive = keep_alive == "keep-alive"
 
-def act_header(context):
-    """action routine to handle a single header"""
-    line = _line(context)
-    if line is None:
-        return None
-    if len(line) == 0:
-        return 'done'
-
-    if len(context.http_headers) == context.http_max_header_count:
-        raise HTTPException(400, 'Bad Request', 'max header count exceeded')
-    test = line.split(':', 1)
-    if len(test) != 2:
-        raise HTTPException(400, 'Bad Request', 'header missing colon')
-    name, value = test
-    context.http_headers[name.strip().lower()] = value.strip()
-
-    return 'header'
-
-
-def _content_length(context):
-    length = context.http_headers.get('content-length')
+    # --- content length
+    length = document.http_headers.get("content-length")
     if length is None:
         length = 0
 
     try:
-        context.http_content_length = int(length)
+        document.http_content_length = int(length)
     except ValueError:
-        raise HTTPException(400, 'Bad Request', 'invalid content-length')
+        raise HTTPException(400, "Bad Request", "invalid content-length")
 
-    if context.http_max_content_length:
-        if context.http_content_length > context.http_max_content_length:
-            raise HTTPException(413, 'Request Entity Too Large')
+    if document.http_max_content_length:
+        if document.http_content_length > document.http_max_content_length:
+            raise HTTPException(413, "Request Entity Too Large")
 
+    # --- content type
+    content_type = document.http_headers.get("content-type")
+    if content_type:
 
-def _content_type(context):
-    content_type = context.http_headers.get('content-type')
-    if not content_type:
-        return
+        # lenient content-type parser
+        pattern = (
+            r"\s*"                # optional leading spaces
+            "(?P<type>.+?)"       # content type
+            r"\s*/\s*"            # slash with optional spaces
+            "(?P<subtype>.+?)"    # content subtype
+            "("                   # start of optional parameter specification
+            r"\s*;\s*"            # semicolon with optional spaces
+            "(?P<attribute>.+?)"  # attribute name
+            r"\s*=\s*"            # equal with optional spaces
+            "(?P<value>.+?)"      # attribute value
+            ")?"                  # end of optional parameter specification
+            r"\s*$"               # optional spaces and end of line
+        )
+        match = re.match(pattern, content_type)
+        if not match:
+            raise HTTPException(400, "Bad Request",
+                                "invalid content-type header")
+        ctype = match.groupdict()
+        document.http_content_type = f"{ctype['type']}/{ctype['subtype']}"
+        if ctype.get("attribute") == "charset":
+            document.http_charset = ctype["value"]
 
-    # lenient content-type parser
-    pattern = (
-        r'\s*'                # optional leading spaces
-        '(?P<type>.+?)'       # content type
-        r'\s*/\s*'            # slash with optional spaces
-        '(?P<subtype>.+?)'    # content subtype
-        '('                   # start of optional parameter specification
-        r'\s*;\s*'            # semicolon with optional spaces
-        '(?P<attribute>.+?)'  # attribute name
-        r'\s*=\s*'            # equal with optional spaces
-        '(?P<value>.+?)'      # attribute value
-        ')?'                  # end of optional parameter specification
-        r'\s*$'               # optional spaces and end of line
-    )
-    match = re.match(pattern, content_type)
-    if not match:
-        raise HTTPException(400, 'Bad Request', 'invalid content-type header')
-    ctype = match.groupdict()
-    context.http_content_type = f"{ctype['type']}/{ctype['subtype']}"
-    if ctype.get('attribute') == 'charset':
-        context.http_charset = ctype['value']
+    # --- transfer encoding
+    encoding = document.http_headers.get("transfer-encoding")
+    if encoding:
+        if encoding != "gzip":
+            raise HTTPException(400, "Bad Request",
+                                "unsupported transfer encoding")
+    document.http_encoding = encoding
 
+    # --- body
+    if document.http_content_length:
+        data = await reader.read(document.http_content_length)
+        if document.http_encoding == "gzip":
+            try:
+                data = gzip.decompress(data)
+            except Exception:
+                raise HTTPException(400, "Bad Request", "malformed gzip data")
+        document.http_content = data.decode(document.http_charset or "utf-8")
 
-def _transfer_encoding(context):
-    encoding = context.http_headers.get('transfer-encoding')
-    if not encoding:
-        return
-    if encoding != 'gzip':
-        raise HTTPException(400, 'Bad Request',
-                            'unsupported transfer encoding')
-    context.http_encoding = encoding
-
-
-def act_process_headers(context):
-    """action routine to handle headers"""
-    _content_length(context)
-    _content_type(context)
-    _transfer_encoding(context)
-
-    return 'content'
-
-
-def _content(context):
-
-    if context.http_method == 'GET':
-        context.content = context.http_query
-    elif context.http_method in ('PATCH', 'POST', 'PUT'):
-        if context.http_content_type == 'application/json':
-            context.content = json.loads(context.http_content)
-        elif context.http_content_type == 'application/x-www-form-urlencoded':
-            query = urlparse.parse_qs(context.http_content)
-            context.content = {
+    # --- content
+    if document.http_method == "GET":
+        document.content = document.http_query
+    elif document.http_method in ("PATCH", "POST", "PUT"):
+        if document.http_content_type == "application/json":
+            document.content = json.loads(document.http_content)
+        elif document.http_content_type == "application/x-www-form-urlencoded":
+            query = urlparse.parse_qs(document.http_content)
+            document.content = {
                 n: v[0] if len(v) == 1 else v for n, v in query.items()
             }
 
-
-def act_body(context):
-    """action routine to handle content"""
-    if len(context.data) < context.http_content_length:
-        return
-    data = context.data[:context.http_content_length]
-    context.data = context.data[context.http_content_length:]
-    if context.http_encoding == 'gzip':
-        try:
-            data = gzip.decompress(data)
-        except Exception:
-            raise HTTPException(400, 'Bad Request', 'malformed gzip data')
-    context.http_content = data.decode(context.http_charset or 'utf-8')
-    _content(context)
-    context.is_parsing = False
-
-
-# ---
+    return document
 
 
 def format_server(content='', code=200, message='', headers=None):

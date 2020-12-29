@@ -10,7 +10,7 @@ NET := --net test
 MOUNT := /opt/git
 VOLUMES := -v=$(GIT):$(MOUNT)
 WORKING := -w $(MOUNT)/aiomicro
-PYTHONPATH := -e PYTHONPATH=$(MOUNT)/ergaleia:$(MOUNT)/fsm:$(MOUNT)/aiodb:.
+PYTHONPATH := -e PYTHONPATH=$(MOUNT)/ergaleia:$(MOUNT)/fsm:$(MOUNT)/aiodb:$(MOUNT)/aiomysql:.
 
 DOCKER := docker run --rm -it $(VOLUMES) $(PYTHONPATH) $(WORKING) $(NET) $(IMAGE)
 
