@@ -1,11 +1,15 @@
 """setup database"""
+import logging
 import os
 
-from aiodb import Cursor
+from aiodb import Cursor, Pool
 # from aiodb.connector.postgres import DB as postgres_db
 
 from aiomicro import micro
 from aiomicro.micro.micro import _boolean
+
+
+log = logging.getLogger(__name__)
 
 
 def setup(defn="micro"):
@@ -56,8 +60,9 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
 
         return Cursor(
             execute=_execute,
-            serialize=con.serialize,
+            ping=con.ping,
             close=con.close,
+            serialize=con.serialize,
             last_id=con.last_id,
             last_message=con.last_message,
             quote="`",
@@ -88,9 +93,14 @@ class _DB:
     def __init__(self):
         self._connector = None
 
-    def setup(self, database_type, *args, **kwargs):
+    def setup(self, database_type, *args, pool=False, **kwargs):
         """establish connector to database"""
         self._connector = _setup(database_type, *args, **kwargs)
+        self.pool = pool
+
+    async def init_pool(self):
+        pool = await Pool.setup(self.cursor)
+        self.cursor = pool.cursor
 
     async def cursor(self):
         """return connection to database as cursor"""

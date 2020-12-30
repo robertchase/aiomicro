@@ -75,18 +75,19 @@ async def handle_request(server, reader, writer, cid, open_msg):
         # --- identify handler based on method + resource
         handler = rest.match(server, request)
 
-        if handler.cursor:
-            request.cursor = cursor = await DB.cursor()
-            await request.cursor.start_transaction()
-        request.cid = cid
-        request.id = rid
-
         # --- display open message before handling request
         if open_msg:
             if not handler.silent:
                 log.info(open_msg)
 
+        # --- grab database connection
+        if handler.cursor:
+            request.cursor = cursor = await DB.cursor()
+            await cursor.start_transaction()
+
         # --- handle the request
+        request.cid = cid
+        request.id = rid
         response = await handler(request)
 
         if cursor:

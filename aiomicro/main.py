@@ -3,6 +3,7 @@ import asyncio
 from functools import partial
 import logging
 
+from aiodb.pool import Pool
 from aiomicro.database import DB
 from aiomicro.handler import on_connect
 from aiomicro import micro
@@ -36,6 +37,8 @@ async def main(defn='micro'):
         cursor = await DB.cursor()
         log.info("verified database connectivity")
         await cursor.close()
+        if DB.pool:
+            await DB.init_pool()
     for server in servers:
         server.connection_id = connection_id
         server.listener = await start_server(server)
