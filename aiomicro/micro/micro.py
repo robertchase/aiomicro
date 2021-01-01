@@ -23,7 +23,9 @@ class Context:  # pylint: disable=too-few-public-methods
 class Database:  # pylint: disable=too-few-public-methods
     """Container for database configuration"""
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, pool=False, pool_size=10, **kwargs):
+        self.pool = _boolean(pool)
+        self.pool_size = int(pool_size)
         self.args = args
         self.kwargs = kwargs
 

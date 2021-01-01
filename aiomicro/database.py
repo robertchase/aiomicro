@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 def setup(defn="micro"):
     """setup database from micro file"""
-    database, _ = micro.parse(defn)
+    database, _, _ = micro.parse(defn)
     return _setup(*database.args, **database.kwargs)
 
 
@@ -93,13 +93,13 @@ class _DB:
     def __init__(self):
         self._connector = None
 
-    def setup(self, database_type, *args, pool=False, **kwargs):
+    def setup(self, database_type, *args, **kwargs):
         """establish connector to database"""
         self._connector = _setup(database_type, *args, **kwargs)
-        self.pool = pool
 
-    async def init_pool(self):
-        pool = await Pool.setup(self.cursor)
+    async def init_pool(self, pool_size):
+        """set up connection pool"""
+        pool = await Pool.setup(self.cursor, pool_size)
         self.cursor = pool.cursor
 
     async def cursor(self):
