@@ -82,10 +82,11 @@ async def handle_request(server, reader, writer, cid, open_msg):
 
         # --- grab database connection
         if handler.cursor:
-            request.cursor = cursor = await DB.cursor()
+            cursor = await DB.cursor()
             await cursor.start_transaction()
 
         # --- handle the request
+        request.cursor = cursor
         request.cid = cid
         request.id = rid
         response = await handler(request)
@@ -125,4 +126,5 @@ async def handle_request(server, reader, writer, cid, open_msg):
         return Result(message)
     finally:
         if cursor:
-            await cursor.close()
+            # don't wait for close to finish
+            asyncio.create_task(cursor.close())
