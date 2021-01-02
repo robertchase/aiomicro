@@ -7,7 +7,7 @@ from aiomicro.micro.parser import parse
 
 def test_database():
     """test database directive"""
-    database, _ = parse(StringIO(
+    database, _, _ = parse(StringIO(
         'DATABASE yeah foo=bar yes=no'
     ))
     assert database
@@ -25,7 +25,7 @@ def test_database_multiple():
 
 def test_group():
     """test group directive"""
-    _, servers = parse(StringIO(
+    _, servers, _ = parse(StringIO(
         'GROUP test_group ONE TWO to_upper=true\n'
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
@@ -63,7 +63,7 @@ def function():
 
 def test_wrap():
     """test wrap directive"""
-    _, servers = parse(StringIO(
+    _, servers, _ = parse(StringIO(
         'WRAP test_wrap test.test_parser.double\n'
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
@@ -80,7 +80,7 @@ def test_wrap():
 
 def test_response_str():
     """test response directive"""
-    _, servers = parse(StringIO(
+    _, servers, _ = parse(StringIO(
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
         'GET test.test_parser.function\n'
@@ -96,7 +96,7 @@ def test_response_str():
 
 def test_response_str_default():
     """test response directive"""
-    _, servers = parse(StringIO(
+    _, servers, _ = parse(StringIO(
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
         'GET test.test_parser.function\n'
@@ -124,7 +124,7 @@ def test_response_str_key():
 
 def test_response_json():
     """test response directive"""
-    _, servers = parse(StringIO(
+    _, servers, _ = parse(StringIO(
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
         'GET test.test_parser.function\n'
@@ -137,7 +137,7 @@ def test_response_json():
 def test_response_json_default():
     """test response directive"""
     with pytest.raises(Exception):
-        _, servers = parse(StringIO(
+        _, servers, _ = parse(StringIO(
             'SERVER test 1000\n'
             'ROUTE /test/ping\n'
             'GET test.test_parser.function\n'
