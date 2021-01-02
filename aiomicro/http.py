@@ -35,21 +35,21 @@ class HTTPDocument:
         self.http_self_type = None
         self.http_charset = None
         self.http_encoding = None
+        self.http_content_type = None
         self.is_keep_alive = True
 
         self.content = {}
-
-        self.http_max_content_length = None
-        self.http_max_line_length = 10000
-        self.http_max_header_count = 100
 
 
 class HTTPReader:
     """stream reader that supports a max line length and timeout"""
 
-    def __init__(self, reader, max_line_length=10_000, timeout=5):
+    def __init__(self, reader, max_line_length=10_000, max_header_count=100,
+                 max_content_length=None, timeout=5):
         self.reader = reader
         self.max_line_length = max_line_length
+        self.max_header_count = max_header_count
+        self.max_content_length = max_content_length
         self.timeout = timeout
         self.buffer = b""
 
@@ -94,7 +94,6 @@ class HTTPReader:
 
 async def parse(reader):
     """parse an HTTP document from a stream"""
-
     document = HTTPDocument()
 
     # --- status: POST / HTTP/1.1
@@ -116,9 +115,9 @@ async def parse(reader):
 
     # --- headers
     while len(header := await reader.readline()) > 0:
-        if len(document.http_headers) == document.http_max_header_count:
-            raise HTTPException(400,
-                                "Bad Request", "max header count exceeded")
+        if len(document.http_headers) == reader.max_header_count:
+            raise HTTPException(400, "Bad Request",
+                                "max header count exceeded")
         test = header.split(":", 1)
         if len(test) != 2:
             raise HTTPException(400, "Bad Request", "header missing colon")
@@ -139,11 +138,16 @@ async def parse(reader):
     except ValueError:
         raise HTTPException(400, "Bad Request", "invalid content-length")
 
-    if document.http_max_content_length:
-        if document.http_content_length > document.http_max_content_length:
+    if reader.max_content_length:
+        if document.http_content_length > reader.max_content_length:
             raise HTTPException(413, "Request Entity Too Large")
 
     # --- content type
+    if "content-type" in document.http_headers and \
+        document.http_headers.get("content-type") == "":
+            raise HTTPException(400, "Bad Request",
+                                "invalid content-type header")
+
     content_type = document.http_headers.get("content-type")
     if content_type:
 
@@ -152,7 +156,7 @@ async def parse(reader):
             r"\s*"                # optional leading spaces
             "(?P<type>.+?)"       # content type
             r"\s*/\s*"            # slash with optional spaces
-            "(?P<subtype>.+?)"    # content subtype
+            "(?P<subtype>[^;]+?)" # content subtype
             "("                   # start of optional parameter specification
             r"\s*;\s*"            # semicolon with optional spaces
             "(?P<attribute>.+?)"  # attribute name
@@ -170,12 +174,12 @@ async def parse(reader):
         if ctype.get("attribute") == "charset":
             document.http_charset = ctype["value"]
 
-    # --- transfer encoding
-    encoding = document.http_headers.get("transfer-encoding")
+    # --- content encoding
+    encoding = document.http_headers.get("content-encoding")
     if encoding:
         if encoding != "gzip":
             raise HTTPException(400, "Bad Request",
-                                "unsupported transfer encoding")
+                                "unsupported content encoding")
     document.http_encoding = encoding
 
     # --- body
@@ -193,7 +197,10 @@ async def parse(reader):
         document.content = document.http_query
     elif document.http_method in ("PATCH", "POST", "PUT"):
         if document.http_content_type == "application/json":
-            document.content = json.loads(document.http_content)
+            try:
+                document.content = json.loads(document.http_content)
+            except json.decoder.JSONDecodeError:
+                raise HTTPException(400, "Bad Request", "invalid json content")
         elif document.http_content_type == "application/x-www-form-urlencoded":
             query = urlparse.parse_qs(document.http_content)
             document.content = {

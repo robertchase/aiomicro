@@ -1,285 +1,350 @@
 """tests for http parser"""
+import asyncio
 import gzip
+import json
+
 import pytest
 
 from aiomicro import http
 
 
-class MockContext:  # pylint: disable=too-few-public-methods,R0902
-    """mock for parser fsm context"""
-    def __init__(self, data):
-        try:
-            self.data = data.encode()
-        except AttributeError:
-            self.data = data
-        http.act_clear(self)
+class ByteReader:
+    """mock read stream"""
+
+    def __init__(self, data, sleep=None):
+        self.data = data
+        self.sleep = sleep
+
+    async def read(self, length):
+        if self.sleep:
+            await asyncio.sleep(self.sleep)
+        result, self.data = self.data[:length], self.data[length:]
+        return result
 
 
-@pytest.mark.parametrize(
-    'line,expected,remainder', (
-        ('abc', None, 'abc'),
-        ('abc\n', 'abc', ''),
-        ('abc\r\n', 'abc', ''),
-        ('abc\r\ndef', 'abc', 'def'),
-        ('abc\r\ndef\r\n', 'abc', 'def\r\n'),
-    )
-)
-def test_line(line, expected, remainder):
-    """test end of line detection"""
+def test_reader_read():
+    """test reader read method"""
+    reader = http.HTTPReader(ByteReader(b"12345678"))
 
-    ctx = MockContext(line)
-    result = http._line(ctx)  # pylint: disable=protected-access
-    assert result == expected
+    async def test():
+        assert b"1234" == await reader.read(4)
+        assert b"567" == await reader.read(3)
+        with pytest.raises(http.HTTPEOF):
+            await reader.read(10)
 
-    try:
-        remainder = remainder.encode()
-    except AttributeError:
-        pass
-    assert ctx.data == remainder
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'line,max_len,message', (
-        ('abcdefghij', 5, 'no end of line encountered'),
-        ('abcdefghij\n', 5, ''),
-    )
-)
-def test_line_length(line, max_len, message):
-    """test line length limits"""
-    ctx = MockContext(line)
-    ctx.http_max_line_length = max_len  # pylint: disable=W0201
-    try:
-        http._line(ctx)  # pylint: disable=protected-access
-        assert False
-    except http.HTTPException as ex:
-        assert ex.code == 431
-        assert ex.explanation == message
+def test_reader_readline():
+    """test reader readline method"""
+    reader = http.HTTPReader(ByteReader(b"one\ntwo\r\nthree"))
+
+    async def test():
+        assert "one" == await reader.readline()
+        assert "two" == await reader.readline()
+        with pytest.raises(http.HTTPEOF):
+            await reader.readline()
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'status,method,resource,query', (
-        ('GET /', None, None, {}),
-        ('GET / HTTP/1.1\n', 'GET', '/', {}),
-        ('GET /?a=1 HTTP/1.1\n', 'GET', '/', {'a': '1'}),
-        ('POST http://test.com/ HTTP/1.1\n', 'POST', '/', {}),
-        ('PUT http://test.com/abc/def HTTP/1.1\n', 'PUT', '/abc/def', {}),
-        (
-            'PUT http://test.com/abc/def?a=b HTTP/1.1\n',
-            'PUT', '/abc/def', {'a': 'b'}
-        ),
-    )
-)
-def test_status(status, method, resource, query):
-    """test status action routine"""
-    ctx = MockContext(status)
-    http.act_status(ctx)
-    assert ctx.http_method == method  # pylint: disable=no-member
-    assert ctx.http_resource == resource  # pylint: disable=no-member
-    assert ctx.http_query == query
+@pytest.mark.parametrize("max_length, data", (
+    (10, b"123456789012345"),
+    (10, b"12345678901\r\n2345"),
+))
+def test_reader_max_line_length(max_length, data):
+    """test max line length"""
+    reader = http.HTTPReader(ByteReader(data), max_length)
+
+    async def test():
+        with pytest.raises(http.HTTPException):
+            await reader.readline()
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'status,message', (
-        ('GET / HTTP/1.1 FOO\n', 'malformed status line'),
-        ('GET /\n', 'malformed status line'),
-        ('GET / FOO\n', 'unsupported HTTP protocol'),
-    )
-)
-def test_invalid_status(status, message):
-    """test status action routine"""
-    ctx = MockContext(status)
-    try:
-        http.act_status(ctx)
-        assert False
-    except http.HTTPException as ex:
-        assert ex.code == 400
-        assert ex.explanation == message
+def test_reader_timeout():
+    """test read timeout"""
+    reader = http.HTTPReader(ByteReader(b"abc", sleep=.01), timeout=.001)
+
+    async def test():
+        with pytest.raises(asyncio.TimeoutError):
+            await reader.readline()
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'header,result,expected', (
-        ('A: B\n', 'header', {'a': 'B'}),
-        ('', None, {}),
-        ('\r\n', 'done', {}),
-    )
-)
-def test_header(header, result, expected):
-    """test header action routine"""
-    ctx = MockContext(header)
-    res = http.act_header(ctx)
-    assert res == result
-    assert ctx.http_headers == expected
+@pytest.mark.parametrize("data, message", (
+    (b"POST\n", "malformed status line"),
+    (b"POST /\n", "malformed status line"),
+    (b"POST / HTTP/1.2\n", "unsupported HTTP protocol"),
+))
+def test_bad_status(data, message):
+    """test bad status lines"""
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[2] == message
+
+    asyncio.run(test())
 
 
-def test_invalid_header():
-    """test missing colon in header"""
-    ctx = MockContext('ABC\n')
-    try:
-        http.act_header(ctx)
-        assert False
-    except http.HTTPException as ex:
-        assert ex.code == 400
-        assert ex.explanation == 'header missing colon'
+def test_status():
+    """test good status line"""
+    reader = http.HTTPReader(ByteReader(b"POST / HTTP/1.1\n\n"))
+
+    async def test():
+        await http.parse(reader)
+
+    asyncio.run(test())
 
 
-def test_too_many_headers():
-    """test header count limit"""
-    ctx = MockContext('X:Y\n')
-    ctx.http_headers = {'a': 'b'}  # pylint: disable=W0201
-    ctx.http_max_header_count = 1  # pylint: disable=W0201
-    try:
-        http.act_header(ctx)
-        assert False
-    except http.HTTPException as ex:
-        assert ex.code == 400
-        assert ex.explanation == 'max header count exceeded'
+@pytest.mark.parametrize("data, count, message", (
+    (b"POST / HTTP/1.1\none:1\ntwo:2\n\n", 1, "max header count exceeded"),
+    (b"POST / HTTP/1.1\none:1\ntwo2\n\n", 100, "header missing colon"),
+))
+def test_bad_header(data, count, message):
+    """test bad headers"""
+    reader = http.HTTPReader(ByteReader(data), max_header_count=count)
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[2] == message
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'header,result,expected', (
-        ({'content-length': '10'}, 'content', 10),
-    )
-)
-def test_process_headers(header, result, expected):
-    """test process_headers action routine"""
-    ctx = MockContext(b'')
-    ctx.http_headers = header  # pylint: disable=W0201
-    res = http.act_process_headers(ctx)
-    assert res == result
-    assert ctx.http_content_length == expected
+def test_header():
+    """test good header"""
+    reader = http.HTTPReader(ByteReader(b"POST / HTTP/1.1\none:1\ntwo:2\n\n"))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_headers["one"] == "1"
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'headers,length,code,reason,explanation', (
-        ({}, 0, None, None, None),
-        (
-            {'content-length': 'abc'},
-            None, 400, 'Bad Request', 'invalid content-length'
-        ),
-        (
-            {'content-length': 1_000_000},
-            None, 413, 'Request Entity Too Large', ''
-        ),
-        ({'content-length': 1_000}, 1_000, None, None, None),
-        ({'content-length': '1000'}, 1_000, None, None, None),
-    )
-)
-def test_content_length(headers, length, code, reason, explanation):
-    """test content length"""
-    ctx = MockContext(b'')
-    ctx.http_headers = headers  # pylint: disable=W0201
-    ctx.http_max_content_length = 10_000  # pylint: disable=W0201
-    try:
-        http._content_length(ctx)  # pylint: disable=protected-access
-        assert ctx.http_content_length == length
-    except http.HTTPException as ex:
-        assert ex.code == code
-        assert ex.reason == reason
-        assert ex.explanation == explanation
+@pytest.mark.parametrize("data, flag", (
+    (b"POST / HTTP/1.1\nconnection: close\n\n", False),
+    (b"POST / HTTP/1.1\nnothing: to see\n\n", True),
+    (b"POST / HTTP/1.1\nconnection: keep-alive\n\n", True),
+))
+def test_keep_alive_flag(data, flag):
+    """test keep-alive header"""
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.is_keep_alive is flag
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'headers,content_type,charset,is_exception', (
-        ({}, None, None, False),
-        (
-            {'content-type': 'text/csv'},
-            'text/csv', None, False
-        ),
-        (
-            {'content-type': 'application/json; charset=utf-8'},
-            'application/json', 'utf-8', False
-        ),
-        (
-            {'content-type': ' application / json ; charset = utf-8 '},
-            'application/json', 'utf-8', False
-        ),
-        ({'content-type': 'garbage'}, None, None, True),
-    )
-)
-def test_content_type(headers, content_type, charset, is_exception):
-    """test content-type"""
-    ctx = MockContext(b'')
-    ctx.http_headers = headers  # pylint: disable=W0201
-    try:
-        http._content_type(ctx)  # pylint: disable=protected-access
-        assert ctx.http_content_type == content_type
-        assert ctx.http_charset == charset  # pylint: disable=no-member
-    except http.HTTPException:
-        assert is_exception is True
+def test_bad_content_length():
+    """test bad content length"""
+    reader = http.HTTPReader(ByteReader(
+        b"POST / HTTP/1.1\ncontent-length: akk\n\n"))
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[2] == "invalid content-length"
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'headers,encoding,code,explanation', (
-        ({}, None, None, None),
-        ({'transfer-encoding': 'gzip'}, 'gzip', None, None),
-        ({'transfer-encoding': 'chunked'}, None, 400,
-         'unsupported transfer encoding'),
-    )
-)
-def test_transfer_encoding(headers, encoding, code, explanation):
-    """test transfer encoding"""
-    ctx = MockContext(b'')
-    ctx.http_headers = headers  # pylint: disable=W0201
-    try:
-        http._transfer_encoding(ctx)  # pylint: disable=protected-access
-        assert ctx.http_encoding == encoding
-    except http.HTTPException as ex:
-        assert ex.code == code
-        assert ex.explanation == explanation
+def test_content_length_too_long():
+    """test content length too long"""
+    reader = http.HTTPReader(ByteReader(
+        b"POST / HTTP/1.1\ncontent-length: 100\n\n"), max_content_length=10)
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[0] == 413
+        assert exc.value.args[1] == "Request Entity Too Large"
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'body,is_gzip,result,length,code,reason,explanation', (
-        ('test', False, 'test', None, None, None, None),
-        ('test', True, 'test', None, None, None, None),
-        ('test', True, 'test', 1, 400, 'Bad Request', 'malformed gzip data'),
-        ('test', False, None, 10, None, None, None),
-    )  # pylint: disable=too-many-arguments
-)
-def test_body(body, is_gzip, result, length, code, reason, explanation):
-    """test act_body action routine"""
-    if is_gzip:
-        body = gzip.compress(body.encode())
-    ctx = MockContext(body)
-    if is_gzip:
-        ctx.http_encoding = 'gzip'  # pylint: disable=W0201
-    ctx.http_content_length = length if length \
-        else len(body)  # pylint: disable=attribute-defined-outside-init
-    try:
-        http.act_body(ctx)
-        assert ctx.http_content == result
-    except http.HTTPException as ex:
-        assert ex.code == code
-        assert ex.reason == reason
-        assert ex.explanation == explanation
+@pytest.mark.parametrize("data, length", (
+    (b"POST / HTTP/1.1\nnothing: to see\n\n", 0),
+    (b"POST / HTTP/1.1\ncontent-length: 0\n\n", 0),
+    (b"POST / HTTP/1.1\ncontent-length: 5\n\n12345", 5),
+))
+def test_content_length(data, length):
+    """test keep-alive header"""
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_content_length == length
+
+    asyncio.run(test())
 
 
-@pytest.mark.parametrize(
-    'method,query,type,body,result', (
-        ('GET', {'a': 1}, None, None, {'a': 1}),
-        ('PATCH', {'a': 1}, None, None, None),
-        ('POST', {'a': 1}, None, None, None),
-        ('PUT', {'a': 1}, None, None, None),
-        ('PATCH', None, 'application/json', '{"b": 2}', {'b': 2}),
-        ('POST', {'a': 1}, 'application/json', '{"b": 2}', {'b': 2}),
-        ('PUT', None, 'application/json',
-         '{"b": 2, "c": 3}', {'b': 2, 'c': 3}),
-        ('PATCH', None, 'application/x-www-form-urlencoded',
-         'b=2', {'b': '2'}),
-        ('PUT', None, 'application/x-www-form-urlencoded',
-         'b=2&b=3', {'b': ['2', '3']}),
-        ('POST', None, 'application/x-www-form-urlencoded',
-         'b=2&b=3&c=4', {'b': ['2', '3'], 'c': '4'}),
-    )
-)
-def test_content(method, query, type,  # pylint: disable=redefined-builtin
-                 body, result):
-    """test content extraction"""
-    ctx = MockContext(b'')
-    ctx.http_method = method  # pylint: disable=attribute-defined-outside-init
-    ctx.http_query = query  # pylint: disable=attribute-defined-outside-init
-    ctx.http_content_type = type  # pylint: disable=W0201
-    ctx.http_content = body  # pylint: disable=attribute-defined-outside-init
-    http._content(ctx)  # pylint: disable=protected-access
-    assert ctx.content == (  # pylint: disable=no-member
-        result if result is not None else {})
+@pytest.mark.parametrize("data", (
+    b"POST / HTTP/1.1\nContent-Type:\n\n",
+    b"POST / HTTP/1.1\nContent-Type: text\n\n",
+    b"POST / HTTP/1.1\nContent-Type: text/\n\n",
+    b"POST / HTTP/1.1\nContent-Type: text/plain;\n\n",
+    b"POST / HTTP/1.1\nContent-Type: text/plain;foo\n\n",
+    b"POST / HTTP/1.1\nContent-Type: text/plain;foo=\n\n",
+))
+def test_bad_content_type(data):
+    """test content-type header"""
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[2] == "invalid content-type header"
+
+    asyncio.run(test())
+
+
+@pytest.mark.parametrize("data, result, charset", (
+    (b"POST / HTTP/1.1\nContent-Type: text/plain\n\n", "text/plain", None),
+    (b"POST / HTTP/1.1\nContent-Type: text/plain;charset=foo\n\n",
+     "text/plain", "foo"),
+    (b"POST / HTTP/1.1\nContent-Type: text/plain;foo=bar\n\n", "text/plain",
+     None),
+))
+def test_content_type(data, result, charset):
+    """test content-type header"""
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_content_type == result
+        assert document.http_charset == charset
+
+    asyncio.run(test())
+
+
+def test_bad_content_encoding():
+    """test bad content encoding header"""
+    reader = http.HTTPReader(ByteReader(
+        b"POST / HTTP/1.1\ncontent-encoding:bad\n\n"
+    ))
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[2] == "unsupported content encoding"
+
+    asyncio.run(test())
+
+
+def test_content_encoding():
+    """test content encoding header"""
+    reader = http.HTTPReader(ByteReader(
+        b"POST / HTTP/1.1\ncontent-encoding:gzip\n\n"
+    ))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_encoding == "gzip"
+
+    asyncio.run(test())
+
+
+def test_http_content():
+    """test message body"""
+    reader = http.HTTPReader(ByteReader(
+        b"POST / HTTP/1.1\nContent-Length: 5\n\nabCDeF"
+    ))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_content == "abCDe"
+
+    asyncio.run(test())
+
+
+def test_gzip_http_content():
+    """test gzipped message body"""
+    body = gzip.compress(b"Abc123")
+    stream = (
+        "POST / HTTP/1.1\n"
+        f"Content-Length: {len(body)}\n"
+        "Content-Encoding: gzip\n\n"
+    ).encode() + body
+    reader = http.HTTPReader(ByteReader(stream))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_content == "Abc123"
+
+    asyncio.run(test())
+
+
+def test_content_get():
+    """test http_query handling"""
+    reader = http.HTTPReader(ByteReader(b"GET /yeah?a=1&b=2 HTTP/1.1\n\n"))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.http_resource == "/yeah"
+        assert document.content["a"] == "1"
+        assert document.content["b"] == "2"
+
+    asyncio.run(test())
+
+
+def test_content_bad_json():
+    """test bad application/json handling"""
+    body = b'{"bad":'
+    data = (
+        "PATCH / HTTP/1.1\n"
+        "Content-Type: application/json\n"
+        f"Content-Length: {len(body)}\n\n"
+    ).encode() + body
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        with pytest.raises(http.HTTPException) as exc:
+            await http.parse(reader)
+        assert exc.value.args[2] == "invalid json content"
+
+    asyncio.run(test())
+
+
+def test_content_json():
+    """test application/json handling"""
+    body = json.dumps(dict(a=1, b=2)).encode()
+    data = (
+        "PATCH / HTTP/1.1\n"
+        "Content-Type: application/json\n"
+        f"Content-Length: {len(body)}\n\n"
+    ).encode() + body
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.content["a"] == 1
+        assert document.content["b"] == 2
+
+    asyncio.run(test())
+
+
+def test_content_form():
+    """test application/x-www-form-urlencoded handling"""
+    body = b"a=1&b=2"
+    data = (
+        "PATCH / HTTP/1.1\n"
+        "Content-Type: application/x-www-form-urlencoded\n"
+        f"Content-Length: {len(body)}\n\n"
+    ).encode() + body
+    reader = http.HTTPReader(ByteReader(data))
+
+    async def test():
+        document = await http.parse(reader)
+        assert document.content["a"] == "1"
+        assert document.content["b"] == "2"
+
+    asyncio.run(test())
