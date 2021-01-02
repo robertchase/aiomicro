@@ -64,11 +64,11 @@ def function():
 def test_wrap():
     """test wrap directive"""
     _, servers, _ = parse(StringIO(
-        'WRAP test_wrap test.test_parser.double\n'
+        'WRAP test_wrap tests.test_parser.double\n'
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
-        'GET test.test_parser.function\n'
-        'PUT test.test_parser.function wrap=test_wrap\n'
+        'GET tests.test_parser.function\n'
+        'PUT tests.test_parser.function wrap=test_wrap\n'
     ))
     server = servers[0]
     route = server.routes[0]
@@ -83,7 +83,7 @@ def test_response_str():
     _, servers, _ = parse(StringIO(
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
-        'GET test.test_parser.function\n'
+        'GET tests.test_parser.function\n'
         'RESPONSE str\n'
     ))
     server = servers[0]
@@ -99,7 +99,7 @@ def test_response_str_default():
     _, servers, _ = parse(StringIO(
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
-        'GET test.test_parser.function\n'
+        'GET tests.test_parser.function\n'
         'RESPONSE str default=whatever\n'
     ))
     server = servers[0]
@@ -127,7 +127,7 @@ def test_response_json():
     _, servers, _ = parse(StringIO(
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
-        'GET test.test_parser.function\n'
+        'GET tests.test_parser.function\n'
         'RESPONSE json\n'
         'KEY abc\n'
     ))

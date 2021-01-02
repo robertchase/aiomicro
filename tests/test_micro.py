@@ -204,7 +204,7 @@ def test_act_arg():
 def test_act_content():
     """test content action routine"""
     ctx = micro.Context()
-    ctx.method = micro.Method('test.test_micro._yup')
+    ctx.method = micro.Method('tests.test_micro._yup')
     assert not ctx.method.contents
     micro.act_content(ctx, 'test', 'int')
     assert ctx.method.contents
@@ -216,7 +216,7 @@ def test_method():
     ctx.route = micro.Route('pattern')
     assert not ctx.route.methods
     micro._method(ctx, 'GET',  # pylint: disable=protected-access
-                  'test.test_micro._yup')
+                  'tests.test_micro._yup')
     assert ctx.route.methods
     assert ctx.route.methods.get('GET')
 
@@ -247,7 +247,7 @@ def test_wrap():
     ctx.wraps['test'] = wrapper
     ctx.route = micro.Route('pattern')
     micro._method(ctx, 'GET',  # pylint: disable=protected-access
-                  'test.test_micro._wrap', wrap='test')
+                  'tests.test_micro._wrap', wrap='test')
     res = Request()
     ctx.method.handler(res)
     assert res.test2
