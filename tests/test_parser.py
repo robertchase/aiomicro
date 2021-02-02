@@ -128,8 +128,7 @@ def test_response_json():
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
         'GET tests.test_parser.function\n'
-        'RESPONSE json\n'
-        'KEY abc\n'
+        "RESPONSE json marshmallow=tests.test_parser.function\n"
     ))
     assert servers  # more to do here
 

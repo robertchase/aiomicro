@@ -1,8 +1,9 @@
 """test rest operations"""
+import marshmallow as ma
 import pytest
 
-from aiomicro.http import HTTPException
-from aiomicro.micro import micro
+from aiohttp import HTTPException
+from aiomicro.micro import action
 from aiomicro import rest
 
 
@@ -32,22 +33,22 @@ def test_normalize_args(resource, args, result, is_value, is_exception):
         # body, no content expected
         ({}, {'a': '1'}, {}, False),
         # missing required content
-        ({'a': micro.Content('a', 'int')}, {}, {}, True),
+        ({'a': action.Content('a', 'int')}, {}, {}, True),
         # missing not-required content (this is OK)
         (
             {
-                'a': micro.Content('a', 'int'),
-                'b': micro.Content('b', 'bool'),
-                'c': micro.Content('c', 'int', is_required=False),
+                'a': action.Content('a', 'int'),
+                'b': action.Content('b', 'bool'),
+                'c': action.Content('c', 'int', is_required=False),
             },
             {'a': '1', 'b': 'true'}, {'a': 1, 'b': True}, False
         ),
         # not-required content present
         (
             {
-                'a': micro.Content('a', 'int'),
-                'b': micro.Content('b', 'bool'),
-                'c': micro.Content('c', 'int', is_required=False),
+                'a': action.Content('a', 'int'),
+                'b': action.Content('b', 'bool'),
+                'c': action.Content('c', 'int', is_required=False),
             },
             {'a': '1', 'b': 'true', 'c': '12'},
             {'a': 1, 'b': True, 'c': 12}, False
@@ -62,6 +63,15 @@ def test_normalize_content(content, body, result, is_exception):
         assert is_exception
 
 
+class ResponseSchema(ma.Schema):
+    class Meta:
+        unknown = ma.EXCLUDE
+
+    a = ma.fields.String(missing=None)
+    b = ma.fields.Integer(missing=None)
+    c = ma.fields.Integer(missing=1)
+
+
 @pytest.mark.parametrize(
     'result,expect,is_exception', (
         (None, {'a': None, 'b': None, 'c': 1}, False),
@@ -69,16 +79,13 @@ def test_normalize_content(content, body, result, is_exception):
         ({'c': '2'}, {'a': None, 'b': None, 'c': 2}, False),
         ({'a': '1', 'c': '2'}, {'a': '1', 'b': None, 'c': 2}, False),
         ({'a': '1', 'b': 123, 'c': '2'}, {'a': '1', 'b': 123, 'c': 2}, False),
-        ({'d': 2}, None, True),
+        ({'d': 2}, {'a': None, 'b': None, 'c': 1}, False),
         ('string', None, True),
     )
 )
 def test_response(result, expect, is_exception):
     """test json response"""
-    res = micro.Response('json')
-    res.keys['a'] = micro.Key('a')
-    res.keys['b'] = micro.Key('b', type=int)
-    res.keys['c'] = micro.Key('c', type=int, default=1)
+    res = action.Response("json", marshmallow="tests.test_rest.ResponseSchema")
     resp = rest._Response(res)  # pylint: disable=protected-access
 
     if is_exception:
@@ -98,7 +105,7 @@ def test_response(result, expect, is_exception):
 )
 def test_response_str(result, expect):
     """test str response operation"""
-    res = micro.Response('str', default='foo')
+    res = action.Response('str', default='foo')
     resp = rest._Response(res)  # pylint: disable=protected-access
 
     assert resp(result) == expect

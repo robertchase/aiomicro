@@ -5,8 +5,8 @@ import os
 from aiodb import Cursor, Pool
 # from aiodb.connector.postgres import DB as postgres_db
 
-from aiomicro import micro
-from aiomicro.micro.micro import _boolean
+from aiomicro.micro import parser
+from aiomicro.micro.action import _boolean
 
 
 log = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 def setup(defn="micro"):
     """setup database from micro file"""
-    database, _, _ = micro.parse(defn)
+    database, _, _ = parser.parse(defn)
     return _setup(*database.args, **database.kwargs)
 
 
@@ -54,20 +54,10 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
             isolation=isolation,
         )
 
-        async def _execute(query, **kwargs):
-            """eat kwargs"""
+        async def no_kwargs(query, **kwargs):
             return await con.execute(query)
 
-        return Cursor(
-            execute=_execute,
-            ping=con.ping,
-            close=con.close,
-            serialize=con.serialize,
-            last_id=con.last_id,
-            last_message=con.last_message,
-            quote="`",
-            transactions=commit,
-        )
+        return Cursor.bind(con, transactions=commit, execute=no_kwargs)
 
     return cursor
 

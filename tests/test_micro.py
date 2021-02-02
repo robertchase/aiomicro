@@ -1,8 +1,8 @@
-"""test micro fsm"""
+"""test micro actions"""
 import pytest
 
-from aiomicro.micro import micro
-from aiomicro.http import HTTPException
+from aiomicro.micro import action, parser
+from aiohttp import HTTPException
 
 
 @pytest.mark.parametrize(
@@ -18,7 +18,7 @@ from aiomicro.http import HTTPException
 def test_int(value, expected, is_exception):
     """test int operaton"""
     try:
-        assert micro._int(value) == expected  # pylint: disable=W0212
+        assert action._int(value) == expected  # pylint: disable=W0212
     except ValueError:
         assert is_exception
 
@@ -36,7 +36,7 @@ def test_int(value, expected, is_exception):
 def test_count(value, expected, is_exception):
     """test count operation"""
     try:
-        assert micro._count(value) == expected  # pylint: disable=W0212
+        assert action._count(value) == expected  # pylint: disable=W0212
     except ValueError:
         assert is_exception
 
@@ -59,7 +59,7 @@ def test_count(value, expected, is_exception):
 def test_boolean(value, expected, is_exception):
     """test boolean operation"""
     try:
-        assert micro._boolean(value) == expected  # pylint: disable=W0212
+        assert action._boolean(value) == expected  # pylint: disable=W0212
     except ValueError:
         assert is_exception
 
@@ -78,8 +78,8 @@ def test_boolean(value, expected, is_exception):
 def test_group(values, to_upper, to_lower, value, expected, is_exception):
     """test group operation"""
     try:
-        group = micro.Group(*values, to_upper=to_upper,
-                            to_lower=to_lower)
+        group = action.Group(*values, to_upper=to_upper,
+                             to_lower=to_lower)
         assert group(value) == expected
     except ValueError:
         assert is_exception
@@ -92,11 +92,11 @@ def _yup():
 @pytest.mark.parametrize(
     'type,group,groups,value,expected,is_valueerror,is_exception', (
         ('int', None, None, '1', 1, False, False),
-        (None, 'TEST', {'TEST': micro.Group('a', 'b')},
+        (None, 'TEST', {'TEST': action.Group('a', 'b')},
          'a', 'a', False, False),
-        (None, 'TEST', {'TEST': micro.Group('a', 'b')},
+        (None, 'TEST', {'TEST': action.Group('a', 'b')},
          'c', None, True, False),
-        (None, 'WHAT', {'TEST': micro.Group('a', 'b')}, None, None, False,
+        (None, 'WHAT', {'TEST': action.Group('a', 'b')}, None, None, False,
          True),
         ('test.test_micro._yup', None, None, 'a', 'yup', False, True),
     )  # pylint: disable=too-many-arguments
@@ -105,7 +105,7 @@ def test_type(type,  # pylint: disable=redefined-builtin
               group, groups, value, expected, is_valueerror, is_exception):
     """test type coersion"""
     try:
-        _type = micro._type(  # pylint: disable=protected-access
+        _type = action._type(  # pylint: disable=protected-access
             type, group, groups)
         assert _type(value) == expected
     except ValueError:
@@ -127,10 +127,10 @@ def test_type(type,  # pylint: disable=redefined-builtin
 def test_arg(args, kwargs, value, expected, is_valueerror, is_exception):
     """test arg type coersion"""
     kwargs['groups'] = {
-        'TEST': micro.Group('a', 'b', 'c', to_lower=True),
+        'TEST': action.Group('a', 'b', 'c', to_lower=True),
     }
     try:
-        arg = micro.Arg(*args, **kwargs)
+        arg = action.Arg(*args, **kwargs)
         assert arg(value) == expected
     except ValueError:
         assert is_valueerror
@@ -152,10 +152,10 @@ def test_arg(args, kwargs, value, expected, is_valueerror, is_exception):
 def test_content(args, kwargs, content, expected, is_valueerror, is_exception):
     """test content type coersion"""
     kwargs['groups'] = {
-        'TEST': micro.Group('a', 'b', 'c', to_lower=True),
+        'TEST': action.Group('a', 'b', 'c', to_lower=True),
     }
     try:
-        arg = micro.Content(*args, **kwargs)
+        arg = action.Content(*args, **kwargs)
         assert arg(content) == expected
     except HTTPException:
         assert is_valueerror
@@ -165,58 +165,58 @@ def test_content(args, kwargs, content, expected, is_valueerror, is_exception):
 
 def test_act_group():
     """test group action routine"""
-    ctx = micro.Context()
+    ctx = parser.Parser()
     assert not ctx.groups
-    micro.act_group(ctx, 'test', 'a', 'b')
+    action.act_group(ctx, 'test', 'a', 'b')
     assert len(ctx.groups) == 1
     assert ctx.groups['test']('a') == 'a'
 
 
 def test_act_server():
     """test server action routine"""
-    ctx = micro.Context()
+    ctx = parser.Parser()
     assert not ctx.server
     assert not ctx.servers
-    micro.act_server(ctx, 'test', '123')
+    action.act_server(ctx, 'test', '123')
     assert ctx.server == ctx.servers[0]
     assert ctx.server.port == 123
 
 
 def test_act_route():
     """test route action routine"""
-    ctx = micro.Context()
+    ctx = parser.Parser()
     assert not ctx.route
-    micro.act_server(ctx, 'test', '123')
-    micro.act_route(ctx, 'pattern')
+    action.act_server(ctx, 'test', '123')
+    action.act_route(ctx, 'pattern')
     assert ctx.route
     assert ctx.route == ctx.server.routes[-1]
 
 
 def test_act_arg():
     """test arg action routine"""
-    ctx = micro.Context()
-    ctx.route = micro.Route('pattern')
+    ctx = parser.Parser()
+    ctx.route = action.Route('pattern')
     assert not ctx.route.args
-    micro.act_arg(ctx, 'int')
+    action.act_arg(ctx, 'int')
     assert ctx.route.args
 
 
 def test_act_content():
     """test content action routine"""
-    ctx = micro.Context()
-    ctx.method = micro.Method('tests.test_micro._yup')
+    ctx = parser.Parser()
+    ctx.method = action.Method('tests.test_micro._yup')
     assert not ctx.method.contents
-    micro.act_content(ctx, 'test', 'int')
+    action.act_content(ctx, 'test', 'int')
     assert ctx.method.contents
 
 
 def test_method():
     """test method setter"""
-    ctx = micro.Context()
-    ctx.route = micro.Route('pattern')
+    ctx = parser.Parser()
+    ctx.route = action.Route('pattern')
     assert not ctx.route.methods
-    micro._method(ctx, 'GET',  # pylint: disable=protected-access
-                  'tests.test_micro._yup')
+    action._method(ctx, 'GET',  # pylint: disable=protected-access
+                   'tests.test_micro._yup')
     assert ctx.route.methods
     assert ctx.route.methods.get('GET')
 
@@ -243,11 +243,11 @@ def test_wrap():
             self.test1 = False
             self.test2 = False
 
-    ctx = micro.Context()
+    ctx = parser.Parser()
     ctx.wraps['test'] = wrapper
-    ctx.route = micro.Route('pattern')
-    micro._method(ctx, 'GET',  # pylint: disable=protected-access
-                  'tests.test_micro._wrap', wrap='test')
+    ctx.route = action.Route('pattern')
+    action._method(ctx, 'GET',  # pylint: disable=protected-access
+                   'tests.test_micro._wrap', wrap='test')
     res = Request()
     ctx.method.handler(res)
     assert res.test2

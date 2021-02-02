@@ -5,7 +5,7 @@ import logging
 
 from aiomicro.database import DB
 from aiomicro.handler import on_connect
-from aiomicro import micro
+from aiomicro.micro import parser
 
 
 log = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ async def start_server(server):
     return listener
 
 
-async def main(defn='micro'):
+async def main(defn="micro"):
     """parse micro definition file and start servers"""
 
     def sequence(current=1):
@@ -30,7 +30,7 @@ async def main(defn='micro'):
             current += 1
 
     connection_id = sequence()
-    database, servers, tasks = micro.parse(defn)
+    database, servers, tasks = parser.parse(defn)
     if database:
         DB.setup(*database.args, **database.kwargs)
         cursor = await DB.cursor()

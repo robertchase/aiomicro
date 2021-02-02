@@ -1,23 +1,8 @@
 """action routines for micro file parsing"""
 import re
 
-from ergaleia import import_by_path
-
-from aiomicro.http import HTTPException
-
-
-class Context:  # pylint: disable=too-few-public-methods
-    """Context for micro fsm"""
-
-    def __init__(self):
-        self.database = None
-        self.groups = {}
-        self.wraps = {}
-        self.tasks = {}
-        self.servers = []
-        self.server = None
-        self.route = None
-        self.method = None
+from aiohttp import HTTPException
+from aiomicro.util import import_by_path
 
 
 class Database:  # pylint: disable=too-few-public-methods
@@ -83,15 +68,20 @@ class Response:  # pylint: disable=too-few-public-methods
     """Container for a response configuration"""
 
     def __init__(self, type,  # pylint: disable=redefined-builtin
-                 default=None):
+                 default=None, marshmallow=None):
 
         if type not in ('json', 'str'):
             raise Exception(f"invalid response type '{type}'")
         if default is not None and type != 'str':
             raise Exception(f"default not valid with type '{type}'")
+        if marshmallow is not None and type != 'json':
+            raise Exception(f"model not valid with type '{type}'")
         self.type = type
         self.default = default
-        self.keys = {}
+        if marshmallow:
+            self.marshmallow = import_by_path(marshmallow)()
+        else:
+            self.marshmallow = None
 
 
 class Key:  # pylint: disable=too-few-public-methods
@@ -292,18 +282,53 @@ def act_delete(context, path, **kwargs):
 
 
 def act_response(context, type,  # pylint: disable=redefined-builtin
-                 default=None):
+                 default=None, marshmallow=None):
     """action routine for response"""
     if context.method.response is not None:
         raise Exception('response already defined')
-    context.method.response = Response(type, default=default)
+    context.method.response = Response(
+        type, default=default, marshmallow=marshmallow)
 
 
-def act_key(context, name, **kwargs):
-    """action routine for response key"""
-    response = context.method.response
-    if response.type != 'json':
-        raise Exception('key only valid for json response types')
-    if name in response.keys.keys():
-        raise Exception('duplicate key name')
-    response.keys[name] = Key(name, groups=context.groups, **kwargs)
+STATES = dict(
+        INIT=dict(
+            database=(act_database, None),
+            group=(act_group, None),
+            wrap=(act_wrap, None),
+            task=(act_task, None),
+            server=(act_server, "SERVER"),
+
+        ), SERVER=dict(
+            server=(act_server, None),
+            route=(act_route, "ROUTE"),
+
+        ), ROUTE=dict(
+            arg=(act_arg, None),
+            get=(act_get, "METHOD"),
+            patch=(act_patch, "METHOD"),
+            put=(act_put, "METHOD"),
+            post=(act_post, "METHOD"),
+            delete=(act_delete, "METHOD"),
+
+        ), METHOD=dict(
+            content=(act_content, None),
+            get=(act_get, None),
+            patch=(act_patch, None),
+            put=(act_put, None),
+            post=(act_post, None),
+            delete=(act_delete, None),
+            response=(act_response, "RESPONSE"),
+            route=(act_route, "ROUTE"),
+            server=(act_server, "SERVER"),
+
+        ), RESPONSE=dict(
+            get=(act_get, "METHOD"),
+            patch=(act_patch, "METHOD"),
+            put=(act_put, "METHOD"),
+            post=(act_post, "METHOD"),
+            delete=(act_delete, "METHOD"),
+            route=(act_route, "ROUTE"),
+            server=(act_server, "SERVER"),
+
+        )
+    )

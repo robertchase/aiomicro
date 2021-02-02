@@ -5,7 +5,7 @@ import logging
 import time
 
 from aiomicro.database import DB
-import aiomicro.http as http
+import aiohttp
 from aiomicro import rest
 
 
@@ -14,9 +14,9 @@ log = logging.getLogger(__name__)
 
 async def on_connect(server, reader, writer):
     """asyncio start_server callback"""
-    reader = http.HTTPReader(reader)
+    reader = aiohttp.HTTPReader(reader)
     cid = next(server.connection_id)
-    peerhost, peerport = writer.get_extra_info('peername')
+    peerhost, peerport = writer.get_extra_info("peername")
     open_msg = (
         f"open server={server.name} socket={peerhost}:{peerport}"
         f", cid={cid}")
@@ -63,8 +63,8 @@ async def handle_request(server, reader, writer, cid, open_msg):
 
         # --- read next http document from socket
         try:
-            request = await http.parse(reader)
-        except http.HTTPEOF:
+            request = await aiohttp.parse(reader)
+        except aiohttp.HTTPEOF:
             return Result(f"remote close cid={cid}", closed=True)
 
         rid = next(request_sequence)
@@ -97,34 +97,33 @@ async def handle_request(server, reader, writer, cid, open_msg):
         # --- send http response
         if response is None:
             response = ""
-        writer.write(http.format_server(response))
+        writer.write(aiohttp.format_server(response))
 
         # --- return structured response
         message += f" t={time.perf_counter() - r_start:f}"
         return Result(message, request.is_keep_alive, handler.silent)
-    except http.HTTPException as ex:
+    except aiohttp.HTTPException as ex:
         if ex.explanation:
             log.warning("code=%s, (%s), cid=%s",
                         ex.code, ex.explanation, cid)
         else:
             log.warning("code=%s, cid=%s", ex.code, cid)
-        writer.write(http.format_server(
+        writer.write(aiohttp.format_server(
             code=ex.code, message=ex.reason, content=ex.explanation,
         ))
         return Result(message)
     except asyncio.exceptions.TimeoutError:
         log.exception("timeout, cid=%s", cid)
-        writer.write(http.format_server(
+        writer.write(aiohttp.format_server(
             code=400, message="Bad Request",
             content="timeout reading HTTP document",
         ))
         return Result(message)
     except Exception:  # pylint: disable=broad-except
         log.exception("internal error, cid=%s", cid)
-        writer.write(http.format_server(
+        writer.write(aiohttp.format_server(
             code=500, message="Internal Server Error"))
         return Result(message)
     finally:
         if cursor:
-            # don't wait for close to finish
-            asyncio.create_task(cursor.close())
+            await cursor.close()

@@ -2,7 +2,7 @@
 from itertools import zip_longest
 import re
 
-from aiomicro.http import HTTPException
+from aiohttp import HTTPException
 
 
 def normalize_args(resource, args):
@@ -42,32 +42,28 @@ class _Response:
     def __call__(self, result):
 
         if self.response is None:
-            return result
-
-        if result is None:
-            return self.default()
-
-        if self.response.type == 'str':
-            return str(result)
-
-        if not isinstance(result, dict):
+            response = result
+        elif result is None:
+            response = self.default()
+        elif self.response.type == 'str':
+            response = str(result)
+        elif self.response.marshmallow is not None:
+            response = self.response.marshmallow.load(result)
+        elif not isinstance(result, dict):
             raise Exception('expecting dict result from handler')
-
-        response = self.default()
-        for key, val in result.items():
-            if key not in response:
-                raise Exception(f"unexpected key '{key}' in handler result")
-            if val is None:
-                continue
-            cast = self.response.keys[key].type
-            response[key] = cast(val)
+        else:
+            response = result
         return response
 
     def default(self):
         """return default value for response"""
         if self.response.type == 'str':
-            return self.response.default
-        return {key: val.default for key, val in self.response.keys.items()}
+            result = self.response.default
+        elif self.response.marshmallow is not None:
+            result = self.response.marshmallow.load({})
+        else:
+            raise Exception()
+        return result
 
 
 class _Match:  # pylint: disable=too-few-public-methods
