@@ -1,6 +1,8 @@
 """action routines for micro file parsing"""
 import re
 
+import marshmallow as ma
+
 from aiohttp import HTTPException
 from aiomicro.util import import_by_path
 
@@ -60,28 +62,40 @@ class Method:  # pylint: disable=too-few-public-methods
             self.handler = wrap(self.handler)
         self.silent = _boolean(silent)
         self.cursor = _boolean(cursor)
-        self.contents = {}
+        self.content = None
         self.response = None
 
 
-class Response:  # pylint: disable=too-few-public-methods
-    """Container for a response configuration"""
+class ResponseMarshmallow:
+    """marshmallow managed response"""
 
-    def __init__(self, type,  # pylint: disable=redefined-builtin
-                 default=None, marshmallow=None):
-
-        if type not in ('json', 'str'):
-            raise Exception(f"invalid response type '{type}'")
-        if default is not None and type != 'str':
-            raise Exception(f"default not valid with type '{type}'")
-        if marshmallow is not None and type != 'json':
-            raise Exception(f"model not valid with type '{type}'")
-        self.type = type
-        self.default = default
-        if marshmallow:
-            self.marshmallow = import_by_path(marshmallow)()
+    def __init__(self, path=None, only=None):
+        schema = import_by_path(path)
+        if only:
+            self.schema = schema(only=only.split(","))
         else:
-            self.marshmallow = None
+            self.schema = schema()
+
+    def __call__(self, result):
+        return self.schema.load(result, unknown=ma.EXCLUDE)
+
+    @property
+    def default(self):
+        return self.schema.load({})
+
+
+class ResponseStr:  # pylint: disable=too-few-public-methods
+    """Container for a string response configuration"""
+
+    def __init__(self, default=""):
+        self._default = default
+
+    def __call__(self, value):
+        return str(value)
+
+    @property
+    def default(self):
+        return self._default
 
 
 class Key:  # pylint: disable=too-few-public-methods
@@ -156,32 +170,39 @@ def _type(name, group=None, groups=None):
         raise Exception(f"unable to import validation function '{name}'")
 
 
-class Arg:  # pylint: disable=too-few-public-methods
+class MarshmallowContent:  # pylint: disable=too-few-public-methods
+    """Container for marshmallow content definition"""
+
+    def __init__(self,  # pylint: disable=too-many-arguments
+                 path=None, only=None):
+        schema = import_by_path(path)
+        if only:
+            self.fields = only.split(",")
+            self.schema = schema(only=only.split(","))
+        else:
+            self.fields = schema._declared_fields.keys()
+            self.schema = schema()
+
+    def __call__(self, value):
+        if value is None:
+            raise HTTPException(400, "Bad Request",
+                                f"expecting fields: {', '.join(self.fields)}")
+        try:
+            return self.schema.load(value)
+        except ma.exceptions.ValidationError as exc:
+            msg = "; ".join([
+                f"{msg[:-1]}: {fld}"
+                for fld, msgs in exc.messages.items()
+                for msg in msgs])
+            raise HTTPException(400, "Bad Request", msg)
+
+
+class MarshmallowArg(MarshmallowContent):
     """Container for arg definition"""
 
-    def __init__(self, type=None,  # pylint: disable=redefined-builtin
-                 group=None, groups=None):
-        self.type = _type(type, group, groups=groups)
-
     def __call__(self, value):
-        return self.type(value)
-
-
-class Content:  # pylint: disable=too-few-public-methods
-    """Container for content definition"""
-
-    def __init__(self, name,  # pylint: disable=too-many-arguments
-                 type=None,  # pylint: disable=redefined-builtin
-                 group=None, groups=None, is_required=True):
-        self.name = name
-        self.type = _type(type, group=group, groups=groups)
-        self.is_required = _boolean(is_required)
-
-    def __call__(self, value):
-        try:
-            return self.type(value)
-        except ValueError as ex:
-            raise HTTPException(400, 'Bad Request', f"'{self.name}': {ex}")
+        result = super().__call__(dict(zip(self.fields, value)))
+        return [result[fld] for fld in self.fields]
 
 
 def act_database(context, *args, **kwargs):
@@ -230,18 +251,28 @@ def act_route(context, pattern):
     context.server.routes.append(route)
 
 
-def act_arg(context, *args, **kwargs):
+def act_arg(context, payload_type, **kwargs):
     """action routine for arg"""
-    arg = Arg(*args, groups=context.groups, **kwargs)
-    context.route.args.append(arg)
+    if context.route.args:
+        raise Exception('args already defined')
+    if payload_type == "marshmallow":
+        args = MarshmallowArg(**kwargs)
+    else:
+        raise Exception("invalid arg type")
+
+    context.route.args = args
 
 
-def act_content(context, *args, **kwargs):
+def act_content(context, payload_type, **kwargs):
     """action routine for content"""
-    content = Content(*args, groups=context.groups, **kwargs)
-    if content.name in context.method.contents:
-        raise Exception('duplicate content name')
-    context.method.contents[content.name] = content
+    if context.method.content is not None:
+        raise Exception('content already defined')
+    if payload_type == "marshmallow":
+        content = MarshmallowContent(**kwargs)
+    else:
+        raise Exception("invalid response type")
+
+    context.method.content = content
 
 
 def _method(context, command, path, **kwargs):
@@ -281,13 +312,18 @@ def act_delete(context, path, **kwargs):
     _method(context, 'DELETE', path, **kwargs)
 
 
-def act_response(context, type,  # pylint: disable=redefined-builtin
-                 default=None, marshmallow=None):
+def act_response(context, payload_type, **kwargs):
     """action routine for response"""
     if context.method.response is not None:
         raise Exception('response already defined')
-    context.method.response = Response(
-        type, default=default, marshmallow=marshmallow)
+    if payload_type == "str":
+        response = ResponseStr(**kwargs)
+    elif payload_type == "marshmallow":
+        response = ResponseMarshmallow(**kwargs)
+    else:
+        raise Exception("invalid response type")
+
+    context.method.response = response
 
 
 STATES = dict(
