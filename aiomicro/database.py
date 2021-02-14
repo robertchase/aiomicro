@@ -6,7 +6,7 @@ from aiodb import Cursor, Pool
 # from aiodb.connector.postgres import DB as postgres_db
 
 from aiomicro.micro import parser
-from aiomicro.micro.action import _boolean
+from aiomicro.util.types import boolean
 
 
 log = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
     user = os.getenv("DB_USER", user)
     password = os.getenv("DB_PASSWORD", password)
     isolation = os.getenv("DB_ISOLATION", isolation)
-    commit = _boolean(os.getenv("DB_COMMIT", commit))
+    commit = boolean(os.getenv("DB_COMMIT", commit))
 
     async def cursor():
         con = await MysqlConnection.connect(

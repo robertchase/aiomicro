@@ -1,5 +1,4 @@
 """rest/http"""
-from itertools import zip_longest
 import re
 
 from aiohttp import HTTPException
@@ -39,15 +38,17 @@ def match(server, request):
     """match http resource and method against server routes"""
 
     for route in server.routes:
-        check = re.match(route.pattern, request.http_resource)
-        if check:
-            method = route.methods.get(request.http_method)
-            if not method:
-                break
+        match = re.match(route.pattern, request.http_resource)
+        if match:
+            break
+
+    if match:
+        method = route.methods.get(request.http_method)
+        if method:
 
             # normalize args (from url) and content
             if route.args:
-                args = route.args(check.groups())
+                args = route.args(match.groups())
             else:
                 args = []
             if method.content:

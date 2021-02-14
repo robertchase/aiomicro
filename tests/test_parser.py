@@ -23,32 +23,6 @@ def test_database_multiple():
         ))
 
 
-def test_group():
-    """test group directive"""
-    _, servers, _ = parse(StringIO(
-        'GROUP test_group ONE TWO to_upper=true\n'
-        'SERVER test 1000\n'
-        'ROUTE /test/ping\n'
-        'ARG group=test_group\n'
-    ))
-    server = servers[0]
-    route = server.routes[0]
-    arg = route.args[0]
-    group_type = arg.type
-    assert group_type('one') == 'ONE'
-    with pytest.raises(ValueError):
-        group_type('three')
-
-
-def test_group_duplicate():
-    """test group directive"""
-    with pytest.raises(Exception):
-        parse(StringIO(
-            'GROUP test_group ONE TWO to_upper=true\n'
-            'GROUP test_group three four to_lower=true\n'
-        ))
-
-
 def double(fun):
     """double the output of the fn"""
     def _double():
@@ -90,8 +64,7 @@ def test_response_str():
     route = server.routes[0]
     get = route.methods['GET']
     response = get.response
-    assert response.type == 'str'
-    assert response.default is None
+    assert response.default == ""
 
 
 def test_response_str_default():
@@ -106,7 +79,6 @@ def test_response_str_default():
     route = server.routes[0]
     get = route.methods['GET']
     response = get.response
-    assert response.type == 'str'
     assert response.default == 'whatever'
 
 
@@ -128,7 +100,7 @@ def test_response_json():
         'SERVER test 1000\n'
         'ROUTE /test/ping\n'
         'GET tests.test_parser.function\n'
-        "RESPONSE json marshmallow=tests.test_parser.function\n"
+        "RESPONSE marshmallow path=tests.test_parser.function\n"
     ))
     assert servers  # more to do here
 

@@ -7,60 +7,74 @@ from aiomicro.micro import action
 from aiomicro import rest
 
 
+class MyContent(ma.Schema):
+    class Meta:
+        ordered = True  # keeps exceptions in order for tests
+    a = ma.fields.Integer(required=True)
+    b = ma.fields.Boolean(required=True)
+    c = ma.fields.String(required=True)
+
+
 @pytest.mark.parametrize(
-    'resource,args,result,is_value,is_exception', (
-        ((), [], [], False, False),
-        (('1',), [int], [1], False, False),
-        (('1', '2'), [int], [1, '2'], False, False),
-        (('1',), [int, int], None, False, True),
-        (('hi',), [int], None, True, False),
+    'only,body,result,exception', (
+        # happy
+        ("a", {"a": 1}, [1], None),
+        ("b,a", {"a": 1, "b": False}, [False, 1], None),
+        # bad
+        ("a", {"a": "bad"}, None, "Not a valid integer: a"),
+        # too many
+        ("a", {"a": 1, "b": "yeah"}, None, "Unknown field: b"),
     )
 )
-def test_normalize_args(resource, args, result, is_value, is_exception):
+def test_marshmallow_arg(only, body, result, exception):
     """test args operation"""
     try:
-        assert rest.normalize_args(resource, args) == result
-    except ValueError:
-        assert is_value
-    except Exception:  # pylint: disable=broad-except
-        assert is_exception
+        path = "tests.test_rest.MyContent"
+        content = action.MarshmallowArg(path, only)
+        assert content(body) == result
+    except HTTPException as exc:
+        assert exc.explanation == exception
 
 
 @pytest.mark.parametrize(
-    'content,body,result,is_exception', (
+    'only,body,result,exception', (
+        # happy
+        ("a", {"a": 100}, {"a": 100}, None),
+        ("a", {"a": "100"}, {"a": 100}, None),
+        ("a,c", {"a": 100, "c": "yo"}, {"a": 100, "c": "yo"}, None),
+        # order
+        ("c,a", {"a": 100, "c": "yo"}, {"c": "yo", "a": 100}, None),
+        ("c,a,b", dict(a=100, b=False, c="yo"), dict(c="yo", a=100, b=False),
+            None),
         # empty case
-        ({}, {}, {}, False),
-        # body, no content expected
-        ({}, {'a': '1'}, {}, False),
-        # missing required content
-        ({'a': action.Content('a', 'int')}, {}, {}, True),
-        # missing not-required content (this is OK)
-        (
-            {
-                'a': action.Content('a', 'int'),
-                'b': action.Content('b', 'bool'),
-                'c': action.Content('c', 'int', is_required=False),
-            },
-            {'a': '1', 'b': 'true'}, {'a': 1, 'b': True}, False
-        ),
-        # not-required content present
-        (
-            {
-                'a': action.Content('a', 'int'),
-                'b': action.Content('b', 'bool'),
-                'c': action.Content('c', 'int', is_required=False),
-            },
-            {'a': '1', 'b': 'true', 'c': '12'},
-            {'a': 1, 'b': True, 'c': 12}, False
-        ),
+        ("a", None, None, "expecting fields: a"),
+        ("a,c", None, None, "expecting fields: a, c"),
+        # missing
+        ("a,c", {"a": 100}, None, "Missing data for required field: c"),
+        ("a,b,c", {"a": 100}, None,
+            ("Missing data for required field: b;"
+             " Missing data for required field: c")),
+        # bad value
+        ("a", {"a": "bad"}, None, "Not a valid integer: a"),
+        ("a,b", {"a": "bad", "b": "sad"}, None,
+            "Not a valid integer: a; Not a valid boolean: b"),
+        # extra
+        ("a", {"a": 100, "d": "ohno"}, None, "Unknown field: d"),
+        # all
+        (None, {"a": 1, "b": True, "c": "hi"}, {"a": 1, "b": True, "c": "hi"},
+            None),
+        (None, {"a": 1, "b": True}, None,
+            "Missing data for required field: c"),
     )
 )
-def test_normalize_content(content, body, result, is_exception):
+def test_marshmallow_content(only, body, result, exception):
     """test content operation"""
     try:
-        assert rest.normalize_content(body, content) == result
-    except HTTPException:
-        assert is_exception
+        path = "tests.test_rest.MyContent"
+        content = action.MarshmallowContent(path, only)
+        assert content(body) == result
+    except HTTPException as exc:
+        assert exc.explanation == exception
 
 
 class ResponseSchema(ma.Schema):
@@ -73,26 +87,29 @@ class ResponseSchema(ma.Schema):
 
 
 @pytest.mark.parametrize(
-    'result,expect,is_exception', (
-        (None, {'a': None, 'b': None, 'c': 1}, False),
-        ({'c': 2}, {'a': None, 'b': None, 'c': 2}, False),
-        ({'c': '2'}, {'a': None, 'b': None, 'c': 2}, False),
-        ({'a': '1', 'c': '2'}, {'a': '1', 'b': None, 'c': 2}, False),
-        ({'a': '1', 'b': 123, 'c': '2'}, {'a': '1', 'b': 123, 'c': 2}, False),
-        ({'d': 2}, {'a': None, 'b': None, 'c': 1}, False),
-        ('string', None, True),
+    "only,result,expect,exception", (
+        # happy
+        (None, dict(a="foo", b=1, c=2), dict(a="foo", b=1, c=2), None),
+        ("a", dict(a="foo", b=1, c=2), dict(a="foo"), None),
+        ("b", dict(a="foo", b=1, c=2), dict(b=1), None),
+        ("c,b", dict(a="foo", b=1, c=2), dict(b=1, c=2), None),
+        ("a", dict(a="foo", d=2), dict(a="foo"), None),
+        # default
+        (None, {}, dict(a=None, b=None, c=1), None),
+        ("a", {}, dict(a=None), None),
+        ("a,c", dict(a="foo"), dict(a="foo", c=1), None),
+        # bad data
+        ("c", dict(c="akk"), None, {'c': ['Not a valid integer.']}),
     )
 )
-def test_response(result, expect, is_exception):
+def test_marshmallow_response(only, result, expect, exception):
     """test json response"""
-    res = action.Response("json", marshmallow="tests.test_rest.ResponseSchema")
-    resp = rest._Response(res)  # pylint: disable=protected-access
-
-    if is_exception:
-        with pytest.raises(Exception):
-            resp(result)
-    else:
-        assert resp(result) == expect
+    path = "tests.test_rest.ResponseSchema"
+    res = action.MarshmallowResponse(path=path, only=only)
+    try:
+        assert res(result) == expect
+    except ma.exceptions.ValidationError as exc:
+        assert exc.messages == exception
 
 
 @pytest.mark.parametrize(
@@ -103,9 +120,9 @@ def test_response(result, expect, is_exception):
         (None, 'foo'),
     )
 )
-def test_response_str(result, expect):
+def test_str_response(result, expect):
     """test str response operation"""
-    res = action.Response('str', default='foo')
+    res = action.StrResponse(default='foo')
     resp = rest._Response(res)  # pylint: disable=protected-access
 
     assert resp(result) == expect

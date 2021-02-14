@@ -5,34 +5,17 @@ import marshmallow as ma
 
 from aiohttp import HTTPException
 from aiomicro.util import import_by_path
+from aiomicro.util.types import boolean
 
 
 class Database:  # pylint: disable=too-few-public-methods
     """Container for database configuration"""
 
     def __init__(self, *args, pool=False, pool_size=10, **kwargs):
-        self.pool = _boolean(pool)
+        self.pool = boolean(pool)
         self.pool_size = int(pool_size)
         self.args = args
         self.kwargs = kwargs
-
-
-class Group:  # pylint: disable=too-few-public-methods
-    """Definition for a group"""
-
-    def __init__(self, *values, to_upper=False, to_lower=False):
-        self.values = values
-        self.to_upper = to_upper
-        self.to_lower = to_lower
-
-    def __call__(self, value):
-        if self.to_upper:
-            value = value.upper()
-        elif self.to_lower:
-            value = value.lower()
-        if value in self.values:
-            return value
-        raise ValueError('must be one of: %s' % str(self.values))
 
 
 class Server:  # pylint: disable=too-few-public-methods
@@ -60,13 +43,13 @@ class Method:  # pylint: disable=too-few-public-methods
         self.handler = import_by_path(path)
         if wrap:
             self.handler = wrap(self.handler)
-        self.silent = _boolean(silent)
-        self.cursor = _boolean(cursor)
+        self.silent = boolean(silent)
+        self.cursor = boolean(cursor)
         self.content = None
         self.response = None
 
 
-class ResponseMarshmallow:
+class MarshmallowResponse:
     """marshmallow managed response"""
 
     def __init__(self, path=None, only=None):
@@ -84,7 +67,7 @@ class ResponseMarshmallow:
         return self.schema.load({})
 
 
-class ResponseStr:  # pylint: disable=too-few-public-methods
+class StrResponse:  # pylint: disable=too-few-public-methods
     """Container for a string response configuration"""
 
     def __init__(self, default=""):
@@ -96,78 +79,6 @@ class ResponseStr:  # pylint: disable=too-few-public-methods
     @property
     def default(self):
         return self._default
-
-
-class Key:  # pylint: disable=too-few-public-methods
-    """Container for a response key"""
-
-    def __init__(self, name,  # pylint: disable=too-many-arguments
-                 type=None,  # pylint: disable=redefined-builtin
-                 group=None, groups=None, default=None):
-        self.name = name
-        self.type = _type(type, group, groups=groups)
-        self.default = default
-
-
-def _int(value):
-    """validator for int type"""
-    try:
-        if int(value) == float(value):
-            return int(value)
-    except ValueError:
-        pass
-    except TypeError:  # from None
-        pass
-    raise ValueError('must be an int')
-
-
-def _count(value):
-    """validator for count type"""
-    try:
-        value = _int(value)
-        if value > 0:
-            return value
-    except ValueError:
-        pass
-    raise ValueError('must be a positive int')
-
-
-def _boolean(value):
-    """validator for boolean type"""
-    if value is True or value is False:
-        return value
-    if str(value).upper() in ('1', 'TRUE', 'T'):
-        return True
-    if str(value).upper() in ('0', 'FALSE', 'F'):
-        return False
-    raise ValueError('must be a boolean')
-
-
-def _type(name, group=None, groups=None):
-    """overall type validator"""
-
-    if group:
-        try:
-            return groups[group]
-        except KeyError:
-            raise Exception(f"group '{group}' not defined")
-
-    if name is None:
-        return str
-
-    try:
-        return {
-            'int': _int,
-            'count': _count,
-            'bool': _boolean,
-        }[name]
-    except KeyError:
-        pass
-
-    try:
-        return import_by_path(name)
-    except Exception:
-        raise Exception(f"unable to import validation function '{name}'")
 
 
 class MarshmallowContent:  # pylint: disable=too-few-public-methods
@@ -188,7 +99,8 @@ class MarshmallowContent:  # pylint: disable=too-few-public-methods
             raise HTTPException(400, "Bad Request",
                                 f"expecting fields: {', '.join(self.fields)}")
         try:
-            return self.schema.load(value)
+            result = self.schema.load(value)
+            return {key: result[key] for key in self.fields}  # enforce order
         except ma.exceptions.ValidationError as exc:
             msg = "; ".join([
                 f"{msg[:-1]}: {fld}"
@@ -201,7 +113,7 @@ class MarshmallowArg(MarshmallowContent):
     """Container for arg definition"""
 
     def __call__(self, value):
-        result = super().__call__(dict(zip(self.fields, value)))
+        result = super().__call__(value)
         return [result[fld] for fld in self.fields]
 
 
@@ -210,14 +122,6 @@ def act_database(context, *args, **kwargs):
     if context.database:
         raise Exception('database already specified')
     context.database = Database(*args, **kwargs)
-
-
-def act_group(context, name, *values, to_upper=False, to_lower=False):
-    """action routine for group"""
-    if name in context.groups.keys():
-        raise Exception('group already specified')
-    group = Group(*values, to_upper=to_upper, to_lower=to_lower)
-    context.groups[name] = group
 
 
 def act_server(context, name, port):
@@ -317,9 +221,9 @@ def act_response(context, payload_type, **kwargs):
     if context.method.response is not None:
         raise Exception('response already defined')
     if payload_type == "str":
-        response = ResponseStr(**kwargs)
+        response = StrResponse(**kwargs)
     elif payload_type == "marshmallow":
-        response = ResponseMarshmallow(**kwargs)
+        response = MarshmallowResponse(**kwargs)
     else:
         raise Exception("invalid response type")
 
@@ -329,7 +233,6 @@ def act_response(context, payload_type, **kwargs):
 STATES = dict(
         INIT=dict(
             database=(act_database, None),
-            group=(act_group, None),
             wrap=(act_wrap, None),
             task=(act_task, None),
             server=(act_server, "SERVER"),
@@ -353,16 +256,7 @@ STATES = dict(
             put=(act_put, None),
             post=(act_post, None),
             delete=(act_delete, None),
-            response=(act_response, "RESPONSE"),
-            route=(act_route, "ROUTE"),
-            server=(act_server, "SERVER"),
-
-        ), RESPONSE=dict(
-            get=(act_get, "METHOD"),
-            patch=(act_patch, "METHOD"),
-            put=(act_put, "METHOD"),
-            post=(act_post, "METHOD"),
-            delete=(act_delete, "METHOD"),
+            response=(act_response, None),
             route=(act_route, "ROUTE"),
             server=(act_server, "SERVER"),
 

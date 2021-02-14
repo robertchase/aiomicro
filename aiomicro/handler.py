@@ -16,22 +16,23 @@ async def on_connect(server, reader, writer):
     """asyncio start_server callback"""
     reader = aiohttp.HTTPReader(reader)
     cid = next(server.connection_id)
+
     peerhost, peerport = writer.get_extra_info("peername")
     open_msg = (
         f"open server={server.name} socket={peerhost}:{peerport}"
         f", cid={cid}")
     t_start = time.perf_counter()
-    silent = False
 
-    while True:
+    silent = False
+    keep_alive = True
+    while keep_alive:
         result = await handle_request(server, reader, writer, cid, open_msg)
         if not result.closed:
             silent = result.silent
         if not silent:
             log.info(result.message)
         open_msg = None
-        if not result.keep_alive:
-            break
+        keep_alive = result.keep_alive
 
     await writer.drain()
     if not silent:
@@ -62,10 +63,7 @@ async def handle_request(server, reader, writer, cid, open_msg):
         r_start = time.perf_counter()
 
         # --- read next http document from socket
-        try:
-            request = await aiohttp.parse(reader)
-        except aiohttp.HTTPEOF:
-            return Result(f"remote close cid={cid}", closed=True)
+        request = await aiohttp.parse(reader)
 
         rid = next(request_sequence)
         message += (
@@ -102,6 +100,8 @@ async def handle_request(server, reader, writer, cid, open_msg):
         # --- return structured response
         message += f" t={time.perf_counter() - r_start:f}"
         return Result(message, request.is_keep_alive, handler.silent)
+    except aiohttp.HTTPEOF:
+        return Result(f"remote close cid={cid}", closed=True)
     except aiohttp.HTTPException as ex:
         if ex.explanation:
             log.warning("code=%s, (%s), cid=%s",
