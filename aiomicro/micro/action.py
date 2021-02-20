@@ -11,7 +11,9 @@ from aiomicro.util.types import boolean
 class Database:  # pylint: disable=too-few-public-methods
     """Container for database configuration"""
 
-    def __init__(self, *args, pool=False, pool_size=10, **kwargs):
+    def __init__(self, connection_name, *args, pool=False, pool_size=10,
+                 **kwargs):
+        self.connection_name = connection_name
         self.pool = boolean(pool)
         self.pool_size = int(pool_size)
         self.args = args
@@ -39,12 +41,12 @@ class Route:  # pylint: disable=too-few-public-methods
 class Method:  # pylint: disable=too-few-public-methods
     """Container for a method configuration"""
 
-    def __init__(self, path, silent=False, cursor=False, wrap=None):
+    def __init__(self, path, silent=False, cursor=None, wrap=None):
         self.handler = import_by_path(path)
         if wrap:
             self.handler = wrap(self.handler)
         self.silent = boolean(silent)
-        self.cursor = boolean(cursor)
+        self.cursor = cursor
         self.content = None
         self.response = None
 
@@ -113,15 +115,20 @@ class MarshmallowArg(MarshmallowContent):
     """Container for arg definition"""
 
     def __call__(self, value):
+        if len(value) != len(self.fields):
+            raise HTTPException(500, "Internal Server Error",
+                                "mismatch between ARG and regex group count")
+        value = dict(zip(self.fields, value))
         result = super().__call__(value)
         return [result[fld] for fld in self.fields]
 
 
 def act_database(context, *args, **kwargs):
     """action routine for database"""
-    if context.database:
-        raise Exception('database already specified')
-    context.database = Database(*args, **kwargs)
+    db = Database(*args, **kwargs)
+    if db.connection_name in context.database:
+        raise Exception('duplicate database name')
+    context.database[db.connection_name] = db
 
 
 def act_server(context, name, port):
@@ -186,6 +193,10 @@ def _method(context, command, path, **kwargs):
     wrap = kwargs.get('wrap')
     if wrap:
         kwargs['wrap'] = context.wraps[wrap]
+    cursor = kwargs.get("cursor")
+    if cursor:
+        if cursor not in context.database:
+            raise Exception('undefined database name')
     method = Method(path, **kwargs)
     context.method = method
     context.route.methods[command] = method

@@ -12,10 +12,28 @@ from aiomicro import rest
 log = logging.getLogger(__name__)
 
 
+def _sequence(current=1):
+    """generate a sequence of request ids"""
+    while True:
+        yield current
+        current += 1
+
+
+connection_sequence = _sequence()
+request_sequence = _sequence()
+
+
 async def on_connect(server, reader, writer):
-    """asyncio start_server callback"""
+    """handler for inbound connection
+
+       The server argument is an object with a name attribute used for logging,
+       and routing information used by http_match.
+
+       The reader and writer arguments are StreamReader and StreamWriter
+       objects associated with an inbound client connection.
+    """
     reader = aiohttp.HTTPReader(reader)
-    cid = next(server.connection_id)
+    cid = next(connection_sequence)
 
     peerhost, peerport = writer.get_extra_info("peername")
     open_msg = (
@@ -23,6 +41,7 @@ async def on_connect(server, reader, writer):
         f", cid={cid}")
     t_start = time.perf_counter()
 
+    # sequentially handle each request on the stream
     silent = False
     keep_alive = True
     while keep_alive:
@@ -41,16 +60,6 @@ async def on_connect(server, reader, writer):
     writer.close()
 
 
-def _sequence(current=1):
-    """generate a sequence of request ids"""
-    while True:
-        yield current
-        current += 1
-
-
-request_sequence = _sequence()
-
-
 Result = namedtuple("Result", "message, keep_alive, silent, closed",
                     defaults=(False, False, False))
 
@@ -63,7 +72,7 @@ async def handle_request(server, reader, writer, cid, open_msg):
         r_start = time.perf_counter()
 
         # --- read next http document from socket
-        request = await aiohttp.parse(reader)
+        request = await http_parse(reader)
 
         rid = next(request_sequence)
         message += (
@@ -71,7 +80,7 @@ async def handle_request(server, reader, writer, cid, open_msg):
             f" resource={request.http_resource}")
 
         # --- identify handler based on method + resource
-        handler = rest.match(server, request)
+        handler = http_match(server, request)
 
         # --- display open message before handling request
         if open_msg:
@@ -80,11 +89,11 @@ async def handle_request(server, reader, writer, cid, open_msg):
 
         # --- grab database connection
         if handler.cursor:
-            cursor = await DB.cursor()
+            cursor = await DB[handler.cursor].cursor()
             await cursor.start_transaction()
+            request.cursor = cursor
 
         # --- handle the request
-        request.cursor = cursor
         request.cid = cid
         request.id = rid
         response = await handler(request)
@@ -95,35 +104,83 @@ async def handle_request(server, reader, writer, cid, open_msg):
         # --- send http response
         if response is None:
             response = ""
-        writer.write(aiohttp.format_server(response))
+        writer.write(http_format_server(response))
 
         # --- return structured response
         message += f" t={time.perf_counter() - r_start:f}"
-        return Result(message, request.is_keep_alive, handler.silent)
+        result = Result(message, request.is_keep_alive, handler.silent)
     except aiohttp.HTTPEOF:
-        return Result(f"remote close cid={cid}", closed=True)
+        result = Result(f"remote close cid={cid}", closed=True)
     except aiohttp.HTTPException as ex:
         if ex.explanation:
             log.warning("code=%s, (%s), cid=%s",
                         ex.code, ex.explanation, cid)
         else:
             log.warning("code=%s, cid=%s", ex.code, cid)
-        writer.write(aiohttp.format_server(
-            code=ex.code, message=ex.reason, content=ex.explanation,
-        ))
-        return Result(message)
+        on_http_exception(writer, ex)
+        result = Result(message)
     except asyncio.exceptions.TimeoutError:
         log.exception("timeout, cid=%s", cid)
-        writer.write(aiohttp.format_server(
-            code=400, message="Bad Request",
-            content="timeout reading HTTP document",
-        ))
-        return Result(message)
+        on_timeout(writer)
+        result = Result(message)
     except Exception:  # pylint: disable=broad-except
         log.exception("internal error, cid=%s", cid)
-        writer.write(aiohttp.format_server(
-            code=500, message="Internal Server Error"))
-        return Result(message)
+        on_exception(writer)
+        result = Result(message)
     finally:
         if cursor:
             await cursor.close()
+
+    return result
+
+
+# --- patch these functions to modify behavior
+
+
+async def http_parse(reader):
+    """parse an http document from reader"""
+    return await aiohttp.parse(reader)
+
+
+def http_match(server, request):
+    """match http request against the routes in server
+
+        returns an object with the following attributes:
+
+            handler - callable that accepts an http_document
+            silent  - flag that disables logging output
+            cursor  - database name of a defined database connector found in
+                      aiomicro.database.DB[name]; the connector is used to
+                      obtain a database connection, which is added to the
+                      http_document as the "cursor" attribute
+    """
+    return rest.match(server, request)
+
+
+def http_format_server(*args, **kwargs):
+    """format data for http response
+
+       see aiohttp.format_server for args + kwargs
+    """
+    return aiohttp.format_server(*args, **kwargs)
+
+
+def on_http_exception(writer, exc):
+    """write http exception reponse back to client"""
+    writer.write(http_format_server(
+        code=exc.code, message=exc.reason, content=exc.explanation,
+    ))
+
+
+def on_timeout(writer):
+    """write timeout response back to client"""
+    writer.write(http_format_server(
+        code=400, message="Bad Request",
+        content="timeout reading HTTP document",
+    ))
+
+
+def on_exception(writer):
+    """write general exception response back to client"""
+    writer.write(http_format_server(
+        code=500, message="Internal Server Error"))

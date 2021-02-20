@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 def setup(defn="micro"):
     """setup database from micro file"""
     database, _, _ = parser.parse(defn)
+    database = tuple(database.values())[0]  # use the first database definition
     return _setup(*database.args, **database.kwargs)
 
 
@@ -80,12 +81,12 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
 
 class _DB:
 
-    def __init__(self):
-        self._connector = None
-
-    def setup(self, database_type, *args, **kwargs):
+    @classmethod
+    def setup(cls, database_type, *args, **kwargs):
         """establish connector to database"""
-        self._connector = _setup(database_type, *args, **kwargs)
+        db = cls()
+        db._connector = _setup(database_type, *args, **kwargs)
+        return db
 
     async def init_pool(self, pool_size):
         """set up connection pool"""
@@ -97,4 +98,19 @@ class _DB:
         return await self._connector()
 
 
-DB = _DB()
+class _DBS:
+    """a dict of database connections indexed by name"""
+
+    def __init__(self):
+        self.dbs = {}
+
+    def __getitem__(self, key):
+        return self.dbs[key]
+
+    def add(self, connection_name, *args, **kwargs):
+        """add a database connector"""
+        con = self.dbs[connection_name] = _DB.setup(*args, **kwargs)
+        return con
+
+
+DB = _DBS()

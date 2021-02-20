@@ -8,18 +8,28 @@ from aiomicro.micro.parser import parse
 def test_database():
     """test database directive"""
     database, _, _ = parse(StringIO(
-        'DATABASE yeah foo=bar yes=no'
+        'DATABASE name yeah foo=bar yes=no'
     ))
-    assert database
-    assert database.args[0] == 'yeah'
+    assert database["name"]
+    assert database["name"].args[0] == 'yeah'
 
 
 def test_database_multiple():
+    """test database directive"""
+    database, _, _ = parse(StringIO(
+        'DATABASE one yeah foo=bar yes=no\n'
+        'DATABASE two yeah-yeah foo=bar yes=no'
+    ))
+    assert database["one"].args[0] == 'yeah'
+    assert database["two"].args[0] == 'yeah-yeah'
+
+
+def test_database_duplicate():
     """test multiple database directives"""
     with pytest.raises(Exception):
         parse(StringIO(
-            'DATABASE yeah foo=bar yes=no\n'
-            'DATABASE what foo=bar yes=no\n'
+            'DATABASE duplicate yeah foo=bar yes=no\n'
+            'DATABASE duplicate what foo=bar yes=no\n'
         ))
 
 

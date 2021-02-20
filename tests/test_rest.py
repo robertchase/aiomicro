@@ -18,12 +18,12 @@ class MyContent(ma.Schema):
 @pytest.mark.parametrize(
     'only,body,result,exception', (
         # happy
-        ("a", {"a": 1}, [1], None),
-        ("b,a", {"a": 1, "b": False}, [False, 1], None),
+        ("a", (1,), [1], None),
+        ("b,a", (False, 1), [False, 1], None),
         # bad
-        ("a", {"a": "bad"}, None, "Not a valid integer: a"),
+        ("a", ("bad",), None, "Not a valid integer: a"),
         # too many
-        ("a", {"a": 1, "b": "yeah"}, None, "Unknown field: b"),
+        ("a", (1, "yeah"), None, "mismatch between ARG and regex group count"),
     )
 )
 def test_marshmallow_arg(only, body, result, exception):

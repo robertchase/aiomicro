@@ -63,7 +63,7 @@ class Parser:
     """Container for micro data"""
 
     def __init__(self):
-        self.database = None
+        self.database = {}
         self.groups = {}
         self.wraps = {}
         self.tasks = {}

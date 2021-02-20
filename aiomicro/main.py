@@ -23,23 +23,19 @@ async def start_server(server):
 async def main(defn="micro"):
     """parse micro definition file and start servers"""
 
-    def sequence(current=1):
-        """generate a sequence of integers"""
-        while True:
-            yield current
-            current += 1
-
-    connection_id = sequence()
     database, servers, tasks = parser.parse(defn)
-    if database:
-        DB.setup(*database.args, **database.kwargs)
-        cursor = await DB.cursor()
-        log.info("verified database connectivity")
+    for connection_name, defn in database.items():
+        con = DB.add(connection_name, *defn.args, **defn.kwargs)
+        try:
+            cursor = await con.cursor()
+        except Exception as exc:
+            raise Exception(
+                f"unable to connect to database {connection_name}") from exc
+        log.info("verified connectivity to database %s", connection_name)
         await cursor.close()
-        if database.pool:
-            await DB.init_pool(pool_size=database.pool_size)
+        if defn.pool:
+            await con.init_pool(pool_size=defn.pool_size)
     for server in servers:
-        server.connection_id = connection_id
         server.listener = await start_server(server)
     for key, value in tasks.items():
         log.info("starting task %s", key)
