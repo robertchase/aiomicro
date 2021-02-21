@@ -104,8 +104,9 @@ class _DBS:
     def __init__(self):
         self.dbs = {}
 
-    def __getitem__(self, key):
-        return self.dbs[key]
+    async def __getitem__(self, key):
+        connector = self.dbs[key]
+        return await connector.cursor()
 
     def add(self, connection_name, *args, **kwargs):
         """add a database connector"""

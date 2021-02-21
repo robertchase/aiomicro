@@ -89,7 +89,7 @@ async def handle_request(server, reader, writer, cid, open_msg):
 
         # --- grab database connection
         if handler.cursor:
-            cursor = await DB[handler.cursor].cursor()
+            cursor = await DB[handler.cursor]
             await cursor.start_transaction()
             request.cursor = cursor
 
@@ -147,12 +147,14 @@ def http_match(server, request):
 
         returns an object with the following attributes:
 
-            handler - callable that accepts an http_document
+            handler - callable that accepts an http_document and returns data
+                      for an http response
             silent  - flag that disables logging output
             cursor  - database name of a defined database connector found in
-                      aiomicro.database.DB[name]; the connector is used to
-                      obtain a database connection, which is added to the
-                      http_document as the "cursor" attribute
+                      aiomicro.database.DB[name]. The connector is used to
+                      obtain a database connection wrapped in an
+                      aiodb.Cursor, which is added to the http_document as the
+                      "cursor" attribute. If None, then no connection is made.
     """
     return rest.match(server, request)
 
