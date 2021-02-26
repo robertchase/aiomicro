@@ -32,7 +32,7 @@ async def on_connect(server, reader, writer):
        The reader and writer arguments are StreamReader and StreamWriter
        objects associated with an inbound client connection.
     """
-    reader = aiohttp.HTTPReader(reader)
+    reader = http_reader(reader)
     cid = next(connection_sequence)
 
     peerhost, peerport = writer.get_extra_info("peername")
@@ -113,19 +113,19 @@ async def handle_request(server, reader, writer, cid, open_msg):
         result = Result(f"remote close cid={cid}", closed=True)
     except aiohttp.HTTPException as ex:
         if ex.explanation:
-            log.warning("code=%s, (%s), cid=%s",
+            log.warning("code=%s, %s, cid=%s",
                         ex.code, ex.explanation, cid)
         else:
             log.warning("code=%s, cid=%s", ex.code, cid)
-        on_http_exception(writer, ex)
+        writer.write(on_http_exception(ex))
         result = Result(message)
     except asyncio.exceptions.TimeoutError:
         log.exception("timeout, cid=%s", cid)
-        on_timeout(writer)
+        writer.write(on_timeout())
         result = Result(message)
-    except Exception:  # pylint: disable=broad-except
+    except Exception as exc:  # pylint: disable=broad-except
         log.exception("internal error, cid=%s", cid)
-        on_exception(writer)
+        writer.write(on_exception(exc))
         result = Result(message)
     finally:
         if cursor:
@@ -135,6 +135,15 @@ async def handle_request(server, reader, writer, cid, open_msg):
 
 
 # --- patch these functions to modify behavior
+
+
+def http_reader(reader):
+    """wrap a StreamReader in an aiohttp.HTTPReader
+
+       the primary reason for patching this call is to add parameters to the
+       HTTPReader constructor in order to change default behavior
+    """
+    return aiohttp.HTTPReader(reader)
 
 
 async def http_parse(reader):
@@ -147,14 +156,14 @@ def http_match(server, request):
 
         returns an object with the following attributes:
 
-            handler - callable that accepts an http_document and returns data
-                      for an http response
-            silent  - flag that disables logging output
-            cursor  - database name of a defined database connector found in
-                      aiomicro.database.DB[name]. The connector is used to
-                      obtain a database connection wrapped in an
-                      aiodb.Cursor, which is added to the http_document as the
-                      "cursor" attribute. If None, then no connection is made.
+            __call__ - accepts an http_document and returns data for an http
+                       response
+            silent   - flag that disables logging output
+            cursor   - database name of a defined database connector found in
+                       aiomicro.database.DB[name]. The connector is used to
+                       obtain a database connection wrapped in an
+                       aiodb.Cursor, which is added to the http_document as the
+                       "cursor" attribute. If None, then no connection is made.
     """
     return rest.match(server, request)
 
@@ -167,22 +176,21 @@ def http_format_server(*args, **kwargs):
     return aiohttp.format_server(*args, **kwargs)
 
 
-def on_http_exception(writer, exc):
-    """write http exception reponse back to client"""
-    writer.write(http_format_server(
+def on_http_exception(exc):
+    """format http exception response back to client"""
+    return http_format_server(
         code=exc.code, message=exc.reason, content=exc.explanation,
-    ))
+    )
 
 
-def on_timeout(writer):
-    """write timeout response back to client"""
-    writer.write(http_format_server(
+def on_timeout():
+    """format timeout response back to client"""
+    return http_format_server(
         code=400, message="Bad Request",
         content="timeout reading HTTP document",
-    ))
+    )
 
 
-def on_exception(writer):
-    """write general exception response back to client"""
-    writer.write(http_format_server(
-        code=500, message="Internal Server Error"))
+def on_exception(exc):
+    """format general exception response back to client"""
+    return http_format_server(code=500, message="Internal Server Error")
