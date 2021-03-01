@@ -4,7 +4,7 @@ import re
 import marshmallow as ma
 
 from aiohttp import HTTPException
-from aiomicro.util import import_by_path
+from aiomicro.util import import_by_path, load_from_path
 from aiomicro.util.types import boolean
 
 
@@ -51,6 +51,23 @@ class Method:  # pylint: disable=too-few-public-methods
         self.response = None
 
 
+class FileMethod:  # pylint: disable=too-few-public-methods
+    """Container for file-based result"""
+
+    def __init__(self, path, silent=False, file=True, **kwargs):
+
+        data = load_from_path(path)
+
+        async def handler(request):
+            return dict(content=data, **kwargs)
+
+        self.handler = handler
+        self.silent = silent
+        self.cursor = None
+        self.content = None
+        self.response = None
+
+
 class MarshmallowResponse:
     """marshmallow managed response"""
 
@@ -81,6 +98,17 @@ class StrResponse:  # pylint: disable=too-few-public-methods
     @property
     def default(self):
         return self._default
+
+
+class HtmlResponse:  # pylint: disable=too-few-public-methods
+    """Container for an HTML response configuration"""
+
+    def __call__(self, value):
+        return dict(
+            content=value,
+            content_type="text/html",
+            compress=True,
+        )
 
 
 class MarshmallowContent:  # pylint: disable=too-few-public-methods
@@ -204,7 +232,12 @@ def _method(context, command, path, **kwargs):
 
 def act_get(context, path, **kwargs):
     """action routine for get method"""
-    _method(context, 'GET', path, **kwargs)
+    if boolean(kwargs.get("file", False)):
+        method = FileMethod(path, **kwargs)
+        context.method = method
+        context.route.methods["GET"] = method
+    else:
+        _method(context, 'GET', path, **kwargs)
 
 
 def act_patch(context, path, **kwargs):
@@ -233,6 +266,8 @@ def act_response(context, payload_type, **kwargs):
         raise Exception('response already defined')
     if payload_type == "str":
         response = StrResponse(**kwargs)
+    elif payload_type == "html":
+        response = HtmlResponse(**kwargs)
     elif payload_type == "marshmallow":
         response = MarshmallowResponse(**kwargs)
     else:
