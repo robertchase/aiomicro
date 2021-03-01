@@ -109,8 +109,12 @@ async def handle_request(server, reader, writer, cid, open_msg):
         # --- return structured response
         message += f" t={time.perf_counter() - r_start:f}"
         result = Result(message, request.is_keep_alive, handler.silent)
-    except aiohttp.HTTPEOF:
-        result = Result(f"remote close cid={cid}", closed=True)
+    except aiohttp.HTTPEOF as exc:
+        if exc.is_timeout:
+            msg = f"timeout close cid={cid}"
+        else:
+            msg = f"remote close cid={cid}"
+        result = Result(msg, closed=True)
     except aiohttp.HTTPException as ex:
         if ex.explanation:
             log.warning("code=%s, %s, cid=%s",
