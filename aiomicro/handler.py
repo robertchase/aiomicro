@@ -69,10 +69,9 @@ async def handle_request(server, reader, writer, cid, open_msg):
     cursor = None
     message = f"request cid={cid}"
     try:
-        r_start = time.perf_counter()
-
         # --- read next http document from socket
         request = await http_parse(reader)
+        r_start = time.perf_counter()
 
         rid = next(request_sequence)
         message += (
