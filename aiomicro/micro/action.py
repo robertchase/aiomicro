@@ -89,11 +89,12 @@ class MarshmallowResponse:
 class StrResponse:  # pylint: disable=too-few-public-methods
     """Container for a string response configuration"""
 
-    def __init__(self, default=""):
+    def __init__(self, default="", **kwargs):
         self._default = default
+        self.kwargs = kwargs
 
     def __call__(self, value):
-        return str(value)
+        return dict(content=str(value), **self.kwargs)
 
     @property
     def default(self):
@@ -260,7 +261,7 @@ def act_delete(context, path, **kwargs):
     _method(context, 'DELETE', path, **kwargs)
 
 
-def act_response(context, payload_type, **kwargs):
+def act_response(context, payload_type="str", **kwargs):
     """action routine for response"""
     if context.method.response is not None:
         raise Exception('response already defined')
