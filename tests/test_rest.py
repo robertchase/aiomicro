@@ -114,9 +114,9 @@ def test_marshmallow_response(only, result, expect, exception):
 
 @pytest.mark.parametrize(
     'result,expect', (
-        ('a', 'a'),
-        (1, '1'),
-        ({'a': 1}, "{'a': 1}"),
+        ('a', {"content": "a"}),
+        (1, {"content": "1"}),
+        ({'a': 1}, {"content": "{'a': 1}"}),
         (None, 'foo'),
     )
 )

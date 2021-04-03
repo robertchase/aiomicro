@@ -1,23 +1,15 @@
 """start aiomicro server"""
 import asyncio
-from functools import partial
 import logging
 
+from aioserver import Listeners
+
 from aiomicro.database import DB
-from aiomicro.handler import on_connect
+from aiomicro.listener import HTTPListener
 from aiomicro.micro import parser
 
 
 log = logging.getLogger(__name__)
-
-
-async def start_server(server):
-    """start a server on a port"""
-    callback = partial(on_connect, server)
-    log.info("starting server '%s' on port %d", server.name, server.port)
-    listener = await asyncio.start_server(callback, port=server.port)
-    log.info('listening on %s', listener.sockets[0].getsockname())
-    return listener
 
 
 async def main(defn="micro"):
@@ -36,12 +28,12 @@ async def main(defn="micro"):
         if defn.pool:
             await con.init_pool(pool_size=defn.pool_size)
     for server in servers:
-        server.listener = await start_server(server)
+        listener = HTTPListener(server.name, server.port, server.routes)
+        await Listeners.add(listener)
     for key, value in tasks.items():
         log.info("starting task %s", key)
         asyncio.create_task(value(), name=key)
-    await asyncio.gather(
-        *[server.listener.serve_forever() for server in servers])
+    await Listeners.run()
 
 
 if __name__ == '__main__':

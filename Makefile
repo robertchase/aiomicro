@@ -1,15 +1,16 @@
-.PHONY: shell flake test
+.PHONY: shell lint test
 
 ifeq ($(GIT),)
   GIT := $(HOME)/git
 endif
 
 IMAGE := base-python
+NAME := aiomicro
 
 NET := --net test
 MOUNT := /opt/git
 VOLUMES := -v=$(GIT):$(MOUNT)
-WORKING := -w $(MOUNT)/aiomicro
+WORKING := -w $(MOUNT)/$(NAME)
 PYTHONPATH := -e PYTHONPATH=$(MOUNT)/aiohttp:$(MOUNT)/aiodb:$(MOUNT)/aiomysql:.
 
 DOCKER := docker run --rm -it $(VOLUMES) $(PYTHONPATH) $(WORKING) $(NET) $(IMAGE)
@@ -17,8 +18,8 @@ DOCKER := docker run --rm -it $(VOLUMES) $(PYTHONPATH) $(WORKING) $(NET) $(IMAGE
 shell:
 	$(DOCKER) bash
 
-flake:
-	$(DOCKER) flake8
+lint:
+	$(DOCKER) pylint $(NAME)
 
 test:
 	$(DOCKER) pytest

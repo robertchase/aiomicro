@@ -34,10 +34,10 @@ class _Match:  # pylint: disable=too-few-public-methods
         return self.response(result)
 
 
-def match(server, request):
+def match(routes, request):
     """match http resource and method against server routes"""
 
-    for route in server.routes:
+    for route in routes:
         match = re.match(route.pattern, request.http_resource)
         if match:
             break
