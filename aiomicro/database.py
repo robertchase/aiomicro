@@ -90,7 +90,7 @@ class _DB:
     def setup(cls, database_type, *args, **kwargs):
         """establish connector to database"""
         dbinst = cls()
-        dbinst._connector = setup(  # pylint: disable=protected-access
+        dbinst._connector = _setup(  # pylint: disable=protected-access
             database_type, *args, **kwargs)
         return dbinst
 

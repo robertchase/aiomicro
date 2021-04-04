@@ -26,8 +26,8 @@ async def main(defn="micro"):
                 f"unable to connect to database {connection_name}") from exc
         log.info("verified connectivity to database %s", connection_name)
         await cursor.close()
-        if defn.pool:
-            await con.init_pool(pool_size=defn.pool_size)
+        if setup.pool:
+            await con.init_pool(pool_size=setup.pool_size)
     for server in servers:
         connection = partial(HTTPConnection, server.routes)
         await Listeners.add(server.name, server.port, connection)
