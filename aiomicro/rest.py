@@ -4,7 +4,7 @@ import re
 from aiohttp import HTTPException
 
 
-class _Response:
+class _Response:  # pylint: disable=too-few-public-methods
 
     def __init__(self, response):
         self.response = response
@@ -37,18 +37,19 @@ class _Match:  # pylint: disable=too-few-public-methods
 def match(routes, request):
     """match http resource and method against server routes"""
 
+    route = None
     for route in routes:
-        match = re.match(route.pattern, request.http_resource)
-        if match:
+        resource = re.match(route.pattern, request.http_resource)
+        if resource:
             break
 
-    if match:
+    if resource:
         method = route.methods.get(request.http_method)
         if method:
 
             # normalize args (from url) and content
             if route.args:
-                args = route.args(match.groups())
+                args = route.args(resource.groups())
             else:
                 args = []
             if method.content:

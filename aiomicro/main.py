@@ -1,11 +1,12 @@
 """start aiomicro server"""
 import asyncio
+from functools import partial
 import logging
 
 from aioserver import Listeners
 
 from aiomicro.database import DB
-from aiomicro.listener import HTTPListener
+from aiomicro.connection import HTTPConnection
 from aiomicro.micro import parser
 
 
@@ -16,8 +17,8 @@ async def main(defn="micro"):
     """parse micro definition file and start servers"""
 
     database, servers, tasks = parser.parse(defn)
-    for connection_name, defn in database.items():
-        con = DB.add(connection_name, *defn.args, **defn.kwargs)
+    for connection_name, setup in database.items():
+        con = DB.add(connection_name, *setup.args, **setup.kwargs)
         try:
             cursor = await con.cursor()
         except Exception as exc:
@@ -28,8 +29,8 @@ async def main(defn="micro"):
         if defn.pool:
             await con.init_pool(pool_size=defn.pool_size)
     for server in servers:
-        listener = HTTPListener(server.name, server.port, server.routes)
-        await Listeners.add(listener)
+        connection = partial(HTTPConnection, server.routes)
+        await Listeners.add(server.name, server.port, connection)
     for key, value in tasks.items():
         log.info("starting task %s", key)
         asyncio.create_task(value(), name=key)

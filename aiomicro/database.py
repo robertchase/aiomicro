@@ -34,7 +34,7 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
                 port=3306, name="", user="", password="", isolation=None,
                 commit=True):
     """setup mysql connector"""
-    from aiomysql.connection import MysqlConnection
+    from aiomysql.connection import MysqlConnection  # pylint: disable=C0415
 
     host = os.getenv("DB_HOST", host)
     port = int(os.getenv("DB_PORT", port))
@@ -56,6 +56,7 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
         )
 
         async def no_kwargs(query, **kwargs):
+            # pylint: disable=unused-argument
             return await con.execute(query)
 
         return Cursor.bind(con, transactions=commit, execute=no_kwargs)
@@ -81,19 +82,24 @@ def setup_mysql(host="mysql",  # pylint: disable=too-many-arguments
 
 class _DB:
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._connector = None
+
     @classmethod
     def setup(cls, database_type, *args, **kwargs):
         """establish connector to database"""
-        db = cls()
-        db._connector = _setup(database_type, *args, **kwargs)
-        return db
+        dbinst = cls()
+        dbinst._connector = setup(  # pylint: disable=protected-access
+            database_type, *args, **kwargs)
+        return dbinst
 
     async def init_pool(self, pool_size):
         """set up connection pool"""
         pool = await Pool.setup(self.cursor, pool_size)
         self.cursor = pool.cursor
 
-    async def cursor(self):
+    async def cursor(self):  # pylint: disable=method-hidden
         """return connection to database as cursor"""
         return await self._connector()
 

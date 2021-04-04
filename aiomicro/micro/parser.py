@@ -53,13 +53,14 @@ def parse(path):
         try:
             handled = parser.handle(directive.lower(), *args, **kwargs)
         except Exception as ex:
-            raise ParseError(str(ex), path, linenum)
+            raise ParseError(str(ex), path, linenum) from ex
         if not handled:
             raise UnexpectedDirective(directive, path, linenum)
     return parser.database, parser.servers, parser.tasks
 
 
-class Parser:
+class Parser:  # pylint: disable=too-few-public-methods
+    # pylint: disable=too-many-instance-attributes
     """Container for micro data"""
 
     def __init__(self):
@@ -75,6 +76,7 @@ class Parser:
         self._state = STATES["INIT"]
 
     def handle(self, directive, *args, **kwargs):
+        """handle directive in the current state"""
         try:
             action, next_state = self._state[directive]
         except KeyError:

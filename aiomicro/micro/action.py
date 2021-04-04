@@ -54,11 +54,11 @@ class Method:  # pylint: disable=too-few-public-methods
 class FileMethod:  # pylint: disable=too-few-public-methods
     """Container for file-based result"""
 
-    def __init__(self, path, silent=False, file=True, **kwargs):
+    def __init__(self, path, silent=False, **kwargs):
 
         data = load_from_path(path)
 
-        async def handler(request):
+        async def handler(request):  # pylint: disable=unused-argument
             return dict(content=data, **kwargs)
 
         self.handler = handler
@@ -83,6 +83,7 @@ class MarshmallowResponse:
 
     @property
     def default(self):
+        """default value for response"""
         return self.schema.load({})
 
 
@@ -98,6 +99,7 @@ class StrResponse:  # pylint: disable=too-few-public-methods
 
     @property
     def default(self):
+        """default value for response"""
         return self._default
 
 
@@ -137,10 +139,11 @@ class MarshmallowContent:  # pylint: disable=too-few-public-methods
                 f"{msg[:-1]}: {fld}"
                 for fld, msgs in exc.messages.items()
                 for msg in msgs])
-            raise HTTPException(400, "Bad Request", msg)
+            raise HTTPException(400, "Bad Request", msg) from exc
 
 
 class MarshmallowArg(MarshmallowContent):
+    # pylint: disable=too-few-public-methods
     """Container for arg definition"""
 
     def __call__(self, value):
@@ -154,10 +157,10 @@ class MarshmallowArg(MarshmallowContent):
 
 def act_database(context, *args, **kwargs):
     """action routine for database"""
-    db = Database(*args, **kwargs)
-    if db.connection_name in context.database:
+    database = Database(*args, **kwargs)
+    if database.connection_name in context.database:
         raise Exception('duplicate database name')
-    context.database[db.connection_name] = db
+    context.database[database.connection_name] = database
 
 
 def act_server(context, name, port):

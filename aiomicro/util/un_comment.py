@@ -2,14 +2,14 @@
 import re
 
 
-def un_comment(s, comment='#', strip=True):
+def un_comment(data, comment='#', strip=True):
     """Uncomment a string or list of strings
 
        truncate s at first occurrence of a non-escaped comment character
        remove escapes from escaped comment characters
 
        Parameters:
-           s       - string to uncomment
+           data    - string to uncomment
            comment - comment character (default=#) (see Note 1)
            strip   - strip line after uncomment (default=True)
 
@@ -27,6 +27,6 @@ def un_comment(s, comment='#', strip=True):
             return result.strip()
         return result
 
-    if isinstance(s, (tuple, list)):
-        return [_un_comment(line) for line in s]
-    return _un_comment(s)
+    if isinstance(data, (tuple, list)):
+        return [_un_comment(line) for line in data]
+    return _un_comment(data)

@@ -32,7 +32,7 @@ def load_from_path(path, filetype=None, has_filetype=True):
         return data.read()
 
 
-def load_lines_from_path(path, filetype=None, has_filetype=True):
+def load_lines_from_path(path, filetype=None):
     """ load lines from a file specified as dot-separated
 
         The file is located according to logic in normalize_path,
@@ -41,16 +41,12 @@ def load_lines_from_path(path, filetype=None, has_filetype=True):
         Parameters: (see normalize_path)
             path         - dot-separated path
             filetype     - optional filetype
-            has_filetype - if True, treat last dot-delimited token as filetype
 
         Notes:
             1. If path is a file-like object, then lines are read directly
                from path, without trying to open it.
             2. Non-string paths are returned immediately (excluding the
                case in Note 1).
-            3. If has_filetype is True, filetype does not have to be specified.
-               If filetype is specified, has_filetype is ignored, and filetype
-               must match the last dot-delimited token exactly.
     """
     if not isinstance(path, str):
         try:

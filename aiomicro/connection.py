@@ -3,7 +3,7 @@ import logging
 import time
 
 from aiohttp import HTTPReader, HTTPException, parse, format_server
-from aioserver import Listener
+from aioserver import Connection
 
 from aiomicro.database import DB
 from aiomicro.rest import match
@@ -12,42 +12,41 @@ from aiomicro.rest import match
 log = logging.getLogger(__package__)
 
 
-def on_http_exception(exc, writer, cid, pid=None):
-    writer.write(format_server(
-        code=exc.code, message=exc.reason, content=exc.explanation))
+class HTTPConnection(Connection):
+    """concrete connection class for HTTP"""
 
-
-class HTTPListener(Listener):
-
-    def __init__(self, name, port, routes):
-        super().__init__(name, port)
+    def __init__(self, routes, reader, writer):
+        super().__init__(reader, writer)
         self.routes = routes
 
-    @staticmethod
-    async def set_reader(reader):
-        return HTTPReader(reader)
+    def on_http_exception(self, exc):
+        """write HTTP response"""
+        self.writer.write(format_server(
+            code=exc.code, message=exc.reason, content=exc.explanation))
 
-    @staticmethod
-    async def next_packet(reader, writer, cid):
+    async def setup_reader(self):
+        return HTTPReader(self.reader)
+
+    async def next_packet(self):
         try:
-            result = await parse(reader)
+            result = await parse(self.reader)
         except HTTPException as exc:
             if exc.explanation:
                 log.warning("code=%s %s, cid=%s", exc.code, exc.explanation,
-                            cid)
+                            self.id)
             else:
-                log.warning("code=%s, cid=%s", exc.code, cid)
-            on_http_exception(exc, writer, cid)
+                log.warning("code=%s, cid=%s", exc.code, self.id)
+            self.on_http_exception(exc)
             result = None
 
         return result
 
-    async def handle(self, packet, writer, cid, pid):
+    async def handle(self, packet, packet_id):
         r_start = time.perf_counter()
 
         message = (
-            f"request cid={cid}"
-            f" rid={pid}, method={packet.http_method}"
+            f"request cid={self.id}"
+            f" rid={packet_id}, method={packet.http_method}"
             f" resource={packet.http_resource}")
         response_code = 200
 
@@ -64,8 +63,8 @@ class HTTPListener(Listener):
                 cursor = None
 
             # --- handle the request
-            packet.cid = cid
-            packet.id = pid
+            packet.cid = self.id
+            packet.id = packet_id
             response = await handler(packet)
 
             if cursor:
@@ -74,11 +73,11 @@ class HTTPListener(Listener):
             # --- send http response
             if response is None:
                 response = ""
-            writer.write(format_server(response))
+            self.writer.write(format_server(response))
 
         except HTTPException as exc:
             response_code = exc.code
-            on_http_exception(exc, writer, cid, pid)
+            self.on_http_exception(exc)
 
         message += (
             f" status={response_code}"
