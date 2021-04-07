@@ -54,7 +54,10 @@ class Method:  # pylint: disable=too-few-public-methods
 class FileMethod:  # pylint: disable=too-few-public-methods
     """Container for file-based result"""
 
-    def __init__(self, path, silent=False, **kwargs):
+    def __init__(self, path, silent=False,
+                 # ignore file argument
+                 file=True,  # pylint: disable=unused-argument
+                 **kwargs):
 
         data = load_from_path(path)
 

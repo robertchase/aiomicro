@@ -3,7 +3,7 @@ from distutils.core import setup
 
 setup(
     name='aiomicro',
-    version='1.3.1',
+    version='1.3.2',
     packages=find_packages(exclude=['tests']),
     description='a microservice framework',
     long_description="""
