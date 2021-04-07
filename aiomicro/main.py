@@ -3,7 +3,7 @@ import asyncio
 from functools import partial
 import logging
 
-from aioserver import Listeners
+from aiolistener import Listeners
 
 from aiomicro.database import DB
 from aiomicro.connection import HTTPConnection

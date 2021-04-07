@@ -3,7 +3,7 @@ import logging
 import time
 
 from aiohttp import HTTPReader, HTTPException, parse, format_server
-from aioserver import Connection
+from aiolistener import Connection
 
 from aiomicro.database import DB
 from aiomicro.rest import match
