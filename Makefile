@@ -11,7 +11,7 @@ NET := --net test
 MOUNT := /opt/git
 VOLUMES := -v=$(GIT):$(MOUNT)
 WORKING := -w $(MOUNT)/$(NAME)
-PYTHONPATH := -e PYTHONPATH=$(MOUNT)/aioserver:$(MOUNT)/aiohttp:$(MOUNT)/aiodb:$(MOUNT)/aiomysql:.
+PYTHONPATH := -e PYTHONPATH=$(MOUNT)/aiolistener:$(MOUNT)/aiohttp:$(MOUNT)/aiodb:$(MOUNT)/aiomysql:.
 
 DOCKER := docker run --rm -it $(VOLUMES) $(PYTHONPATH) $(WORKING) $(NET) $(IMAGE)
 
